@@ -123,7 +123,8 @@ class Worker(QObject):
                     if command[0] == 'pause':
                         scheduled.clear()
                         paused = bool(command[1])
-                        self.session.pause(paused)
+                        warning = self.session.pause(paused)
+                        if warning: self.log.emit(warning)
                         frames, fps, measured = 0, 0., time.monotonic()
                         next_frame = 0
                     elif command[0] == 'input' and not paused and self.session.input_ready:

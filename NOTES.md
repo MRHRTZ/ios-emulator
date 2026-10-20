@@ -1,3 +1,12 @@
+## Clock resume / Windows CI milestone — 2026-10-21
+
+- Clean Windows host CI39504340072 SUCCESS at source f479b60: pinned dependency install, pip check and42 host/Qt tests. TODO clean Windows host setup test complete, not a complete clean machine guest boot test.
+- Kernel0092 CI39503279573 SUCCESS; artifact xnu/out-0092 SHA256SUMS verified 50b41873810b1eebe22a6d663d89e50317892c843f6133b4666c4749a606efc3, beginFrame/endFrame and keyboard symbols confirmed. Default0091 preserved.
+- Baseline0091 pause44sec then about100sec caused visible calendar lag: host04:57:32WIB versus guest2:55 (normally2:57 in its existing timezone). At04:58:36 guest2:56. This is elapsed-time drift, separate from timezone. Resume needs kernel wake/calendar path.
+- Patch0093: PC-only ring capability bit1 advertises calendar resume; event kind4/code0/down0 calls clock_wakeup_calendar and logs acknowledgment. Header word15 publishes guest UTC seconds each HID poll. Host sends this after QMP cont, awaits acknowledgment, records lag/warning, and leaves legacy kernels unchanged. SweetHID.cpp local syntax compile PASS;44 host tests PASS. Build/runtime pending.
+- Closed baseline GUI via Alt+F4 around04:58:40 before kernel comparison; verify QEMU19720 exit/gui-result before launching or editing overlay. No offline overlay edits made.
+
+---
 ## Pause/setup milestone — 2026-10-21
 
 - Kernel0092 CI39503279573 SUCCESS; download to xnu/out-0092 started. Default0091 still untouched. Verify SHA256SUMS before installing, after stopping current GUI/QEMU cleanly.

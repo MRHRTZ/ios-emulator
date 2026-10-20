@@ -117,6 +117,8 @@ class PcSession:
         self.last_video_frame = None
         self.video_metadata = None
         self.frame_skips = 0
+        self.guest_calendar_unix = None
+        self.clock_resume_warning = None
 
     def start(self):
         import adt
@@ -230,6 +232,8 @@ class PcSession:
             raise RuntimeError('QEMU process stopped. Check session logs for details.')
         self.header = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
         self.input_ready = self.header[0] == INPUT_MAGIC and self.header[1] == 1
+        if self.input_ready and self.header[7] & 2:
+            self.guest_calendar_unix = struct.unpack('<I', self.qtest.read(INPUT_ADDRESS + 60, 4))[0]
         path = self.out/'serial.txt'
         delta = ''
         if path.exists():
@@ -253,7 +257,10 @@ class PcSession:
             status = {'pid': self.process.pid, 'stage': self.stage, 'input_ready': self.input_ready,
                       'header': self.header, 'updated_at': time.time(), 'output': str(self.out),
                       'frame_export_ms': round(self.frame_export_ms, 2),
-                      'video_metadata': self.video_metadata, 'unchanged_frame_skips': self.frame_skips}
+                      'video_metadata': self.video_metadata, 'unchanged_frame_skips': self.frame_skips,
+                      'guest_calendar_unix': self.guest_calendar_unix,
+                      'calendar_lag_seconds': round(time.time()-self.guest_calendar_unix, 2) if self.guest_calendar_unix else None,
+                      'clock_resume_warning': self.clock_resume_warning}
             path = self.out/'live.json'
             temporary = path.with_suffix('.tmp')
             try:
@@ -347,6 +354,29 @@ class PcSession:
                     raise RuntimeError('iOS did not release its input controls before pausing.')
                 time.sleep(.01)
         self.qmp.call('stop' if paused else 'cont')
+        if not paused and self.input_ready and self.header and self.header[7] & 2:
+            self.clock_resume_warning = None
+            if not self.resume_calendar():
+                self.clock_resume_warning = 'Guest resumed but did not acknowledge calendar resynchronization.'
+        return self.clock_resume_warning
+
+    def resume_calendar(self):
+        """Protocol-v1 capability bit1: system event4 refreshes calendar from RTC."""
+        header = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
+        head, tail = header[2:4]
+        if ((head-tail) & 0xffffffff) >= INPUT_SLOTS:
+            return False
+        sequence = (head+1) & 0xffffffff
+        record = struct.pack('<8I', sequence, 4, 0, 0, 0, 0, 0, 0)
+        self.qtest.write(INPUT_ADDRESS + 64 + (head & 63)*32, record)
+        self.qtest.write32(INPUT_ADDRESS + 8, sequence)
+        deadline = time.monotonic()+3
+        while time.monotonic()<deadline:
+            consumed = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))[3]
+            if consumed == sequence:
+                return True
+            time.sleep(.01)
+        return False
 
     def stop(self):
         if self.process is not None and self.process.poll() is None:

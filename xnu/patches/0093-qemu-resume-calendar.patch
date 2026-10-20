@@ -1,0 +1,43 @@
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -23,6 +23,7 @@
+ #include <pexpert/pexpert.h>
+ #include <pexpert/device_tree.h>
+ #include <machine/machine_routines.h>
++#include <kern/clock.h>
+ 
+ extern "C" void sweet_hid_key(int key, int down);
+ extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+@@ -499,7 +500,7 @@
+                 if (gSweetKeyboard && gSweetKeyboard->init() && gSweetKeyboard->attach(provider)) {
+                     if (!gSweetKeyboard->start(provider)) { gSweetKeyboard->detach(provider); OSSafeReleaseNULL(gSweetKeyboard); }
+                 } else { OSSafeReleaseNULL(gSweetKeyboard); }
+-                fPCInput[7] = gSweetKeyboard ? 1 : 0;
++                fPCInput[7] = (gSweetKeyboard ? 1 : 0) | 2; /* calendar resume supported */
+                 fPCInput[1] = 1;
+ 				__asm__ volatile("dmb sy" ::: "memory");
+ 				fPCInput[0] = 0x4e495753; /* SWIN, protocol v1 */
+@@ -652,6 +653,12 @@
+ 			sweet_hid_key((int)code, (int)down);
+         } else if (kind == 3 && code >= 4 && code <= 231 && down <= 1 && gSweetKeyboard) {
+             gSweetKeyboard->key(code, down != 0);
++        } else if (kind == 4 && code == 0 && down == 0) {
++            /* QEMU pause freezes CNTV but PL031 keeps host UTC. Treat resume
++             * like a platform wake so calendar/continuous time catch up and
++             * notify userspace. This ring exists only on the PC ADT path. */
++            clock_wakeup_calendar();
++            IOLog("SWEET PC: calendar resynchronized after host resume\n");
+ 		}
+ 		page[4]++;
+ 		page[5] = kind;
+@@ -659,6 +666,10 @@
+ 		__asm__ volatile("dmb sy" ::: "memory");
+ 		page[3] = tail;
+ 	}
++	clock_sec_t calendar_sec;
++	clock_usec_t calendar_usec;
++	clock_get_calendar_microtime(&calendar_sec, &calendar_usec);
++	page[15] = (uint32_t)calendar_sec;
+ 	page[6]++;
+ 	sender->setTimeoutMS(10);
+ }

@@ -312,7 +312,7 @@ class PausedFrameTests(unittest.TestCase):
         worker=Worker({'memory_mib':2048,'cpu_count':2,'fps':60})
         frame=Mock(side_effect=AssertionError('Paused guest must not be exported'))
         def poll():worker.stopping.set();return ''
-        session=SimpleNamespace(start=lambda:None,pause=Mock(),poll=poll,frame=frame,
+        session=SimpleNamespace(start=lambda:None,pause=Mock(return_value=None),poll=poll,frame=frame,
                                 out=Path('.'),input_ready=True,stage='display',stop=lambda:None)
         states=[];worker.state.connect(lambda *args:states.append(args))
         worker.submit('pause',True)
@@ -320,3 +320,23 @@ class PausedFrameTests(unittest.TestCase):
         session.pause.assert_called_once_with(True)
         frame.assert_not_called()
         self.assertIn(('paused',True,0.),states)
+
+
+class ResumeCalendarTests(unittest.TestCase):
+    def test_resume_system_event_is_capability_gated_and_acknowledged(self):
+        from types import SimpleNamespace
+        for capabilities in (1,3):
+            s=PcSession('.');s.input_ready=True;s.header=[INPUT_MAGIC,1,0,0,0,0,0,capabilities]
+            channel=MemoryChannel();s.qtest=channel
+            def publish(address,value):channel.header[2]=value;channel.header[3]=value
+            channel.write32=publish
+            calls=[];s.qmp=SimpleNamespace(call=calls.append)
+            self.assertIsNone(s.pause(False))
+            self.assertEqual(calls,['cont'])
+            if capabilities & 2:
+                self.assertEqual(channel.events[0][1],(1,4,0,0,0,0,0,0))
+            else:self.assertEqual(channel.events,[])
+
+    def test_clock_resume_does_not_overwrite_full_ring(self):
+        s=PcSession('.');s.qtest=MemoryChannel(64,0)
+        self.assertFalse(s.resume_calendar());self.assertFalse(s.qtest.events)

@@ -77,7 +77,7 @@ must report missing prerequisites honestly, never label the test PID 1 as iOS.
 - [x] English icon sidebar, hover labels, no touch-area tooltip.
 - [x] Cover topology/RTC, ring backpressure/wrap, coordinates and GUI labels in host tests.
 - [x] Extend regression coverage for extraction, malformed manifests and cleanup.
-- [ ] Add a reproducible clean-Windows setup test.
+- [x] Add a reproducible clean-Windows Python/Qt host setup test (CI39504340072 passed; guest boot tested separately).
 
 ## 6. Single-app wrapper (after CLI works with real iOS)
 
