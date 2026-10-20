@@ -11,6 +11,7 @@ python emulator.py inspect
 python emulator.py extract
 python emulator.py device-tree
 python emulator.py probe-root
+python emulator.py prepare-root
 python emulator.py run --test
 python emulator.py status
 ```
@@ -29,11 +30,25 @@ python emulator.py status
   verify APFS, and extract/validate ARM64 `launchd` and `dyld` samples. This
   still does not create an HFS+ root disk. Local 7-Zip 26.04 lives under
   `data/tools/7zip/`; the Windows system copy (21.04) cannot read this APFS.
+- `prepare-root`: builds a sparse 16 GiB case-sensitive HFS+ root using a
+  temporary Ubuntu x86_64 QEMU helper. Windows uses WHPX, which must already
+  be available. No Docker/WSL is used. All three firmware source disks are
+  read-only; the helper writes only its new output and private Linux overlay.
+  Installs Linux APFS/HFS+ tools inside that helper. Local Python dependency:
+  `python -m pip install --target data/python-deps pycdlib==1.22.0`.
+  Emits preparation stages; progress is saved in `data/root-helper/progress.json`.
+  A completed filesystem check and clean volume header are required before
+  publishing `data/root/ios-root.img`; interrupted construction stays separate.
 - `run --test`: assembles the included tiny userspace program, wraps it in
   a Mach-O RAM root, builds a payload, and runs QEMU for 45 seconds. Success
   requires the PID 1 marker and a decoded screen with no visible panic.
-- `run`: expects a prepared `data/root/ios-root.img`. It refuses to silently
-  substitute the test program for real iOS.
+- `run`: expects prepared `data/root/ios-root.img` and a kernel with patch 0082.
+  Boots through virtio block storage with a new qcow2 overlay on every run.
+  The base image is preserved. Serial console streams to the CLI.
+  Default kernel-managed RAM is 2048 MiB; use `--memory-mib` (256..4096) to change it.
+  The CLI never substitutes the test program for real iOS.
+- `run --disk-image <path>`: selects another prepared raw HFS+ disk.
+  Changes remain in the run directory overlay; reuse/promotion is not yet exposed.
 - `run --root-image <path>`: tests a supplied prepared raw RAM-root image;
   IPSW/DMG inputs and roots larger than the current 1 GiB limit are rejected.
 - `status`: shows download phase and the last saved run summary.
@@ -43,6 +58,7 @@ Other useful options:
 ```powershell
 python emulator.py download --version 16.7.16
 python emulator.py inspect --ipsw "D:\path\firmware.ipsw"
+python emulator.py run --kernel xnu/out-0083/kernel.development.sweet --secs 300
 python emulator.py run --test --secs 60 --qemu "G:\Software\qemu\qemu-system-aarch64.exe"
 ```
 
@@ -54,6 +70,8 @@ It does **not** contain Apple's launchd, dyld, SpringBoard, or system apps.
 ```text
 data/firmware/             IPSW + catalog metadata + progress.json + partial download
 data/extracted/20H392/     selected DMGs, IM4P, BuildManifest, manifest summary
+data/root-helper/          temporary Linux helper, serial log and progress
+data/root/                 staging root, prepared root and ready.json
 data/test-root/            generated test executable/object
 data/runs/<time>/          payload, ADT, fb.png/fb.txt, registers and result summary
 data/last-run.json         last run state
@@ -63,15 +81,17 @@ xnu/out/                  local kernel build artifact
 `data/`, `research/` and kernel artifacts are ignored by Git. Firmware remains
 outside source control and outside the future application bundle.
 
-## Current real-iOS blocker
+## Current real-iOS status
 
-The downloaded APFS/UDIF images are firmware components, not bootable QEMU
-root disks. The existing `tools/mkiosroot.sh` uses Linux APFS/HFS+ utilities.
-Native UDIF/APFS reading and extraction of two real Apple binaries have been
-verified with 7-Zip 26.04. Complete extraction with metadata preservation,
-HFS+ writing and a storage/memory design are still required. The current small
-RAM-root layout cannot hold a 16 GiB root.
-See `TODO.md` before treating firmware extraction as completed iOS support.
+Kernel patches 0082/0083 were built successfully in CI run 39371527018.
+Windows QEMU executes the minimal test PID 1 with the new kernel and streams
+the serial console. Apple firmware has been downloaded and extracted; the
+16 GiB HFS+ root is being constructed with ownership, permissions, symlinks
+and hardlinks preserved by rsync. Extended attribute/ACL parity is not yet
+verified. The virtual disk avoids loading the whole root into guest RAM.
+Actual Apple launchd/dyld and SpringBoard still require runtime validation.
+These binaries are downloaded from Apple's IPSW, not committed to this repo.
+See TODO.md for remaining Windows input/display and application packaging work.
 
 ## Checks
 

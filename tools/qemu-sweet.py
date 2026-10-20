@@ -299,6 +299,8 @@ def main():
     ap.add_argument('--kernel', help='matching unstripped kernel, for exact framebuffer text decoding (uses llvm-nm)')
     ap.add_argument('--fail-on-panic', action='store_true', help='exit 2 for a visible panic, 3 for incomplete/blank decoding; requires --kernel')
     ap.add_argument('--live-serial', action='store_true', help='stream serial console output to stdout in real time')
+    ap.add_argument('--disk', help='Prepared root block image (raw or qcow2), not copied into guest RAM')
+    ap.add_argument('--disk-format', choices=['raw', 'qcow2'], default='raw')
     ap.add_argument('--qemu', help='Path to qemu-system-aarch64 executable')
     ap.add_argument('--check-env', action='store_true', help='check QEMU installation and dependencies without running a payload')
     a = ap.parse_args()
@@ -355,6 +357,12 @@ def main():
            '-device', f'loader,file={qemu_path(out + "/ram.bin")},addr={phys_base:#x},force-raw=on',
            '-device', f'loader,file={qemu_path(out + "/stub.bin")},addr={STUB_PA:#x},force-raw=on',
            '-device', f'loader,addr={STUB_PA:#x},cpu-num=0']
+    if a.disk:
+        if not Path(a.disk).is_file():
+            ap.error('--disk image does not exist')
+        cmd += ['-global', 'virtio-mmio.force-legacy=false',
+                '-drive', f'file={qemu_path(a.disk)},format={a.disk_format},if=none,id=iosroot,cache=writeback',
+                '-device', 'virtio-blk-device,drive=iosroot']
     if a.gdb:
         cmd += ['-S', '-gdb', 'tcp:127.0.0.1:1234']
 

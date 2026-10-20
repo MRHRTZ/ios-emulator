@@ -1,3 +1,14 @@
+## Windows virtio/CLI active handoff (2026-10-20, newest)
+
+- User explicitly authorized push of source patches to MRHRTZ/ios-emulator branch windows-virtio-root and CI. Fork Actions enabled by user. Manual main run 39371314278 is NOT the driver build.
+- Branch commits 3b30a85 (0082 polled modern virtio-mmio block root), 5dcf55b (branch CI), d50a997 (0083 QEMU PL011 console). CI 39371527018 SUCCESS, source d50a9975a92109239bc1f5d68722c46fba96658d; artifact xnu-kernel downloaded with gh to xnu/out-0083. SHA256 dc5c1334b8550f1f7cb0d19785add678b4d83e7c7479088315f5618128ad69d7 verified against SHA256SUMS; virtio and PL011 symbols verified.
+- New kernel actual QEMU smoke: data/runs/20261020-115833-640200, custom md0 PID1 and repeated still-alive confirmed in serial.txt; result no_panic_observed, unknown_glyphs=0, exit0. This is a TEST process, not Apple launchd. PL011 serial console now observed working on Windows.
+- Host CLI/storage work pending commit: qemu-only ADT RAM size, virtio MMIO node and UART; qemu-sweet --disk; emulator run disk default uses isolated qcow2 overlay, rd=vioroot0 and 2GiB kernel-managed RAM; disk kernel symbol and HFS header checked. Explicit --kernel xnu/out-0083/kernel.development.sweet still needed until default kernel updated after runtime validation.
+- prepare-root uses temporary x86_64 Ubuntu Jammy QEMU WHPX helper (not WSL/Docker) with firmware sources read-only. Ubuntu image checksum verified in data/root-helper/source.json, local optional pycdlib in data/python-deps. APFS reader compiled at 66b86bd525e8cb90f9012543be89b1f092b75cf3; HFS+ kernel extras installed in helper. Target is new sparse16GiB data/root/ios-root-build.img, never an existing host disk.
+- CURRENT: helper PID43244 (verify process.json) copying OS metadata/files; stage copy-os. CLI prepare-root monitor follows existing writer, then promotes staging to ios-root.img only after ROOT_BUILD_OK + clean HFS geometry. Do not start a second writer, boot incomplete staging, or claim root ready yet. Serial log progress percentages are incremental rsync discovery, not whole-root percentages. Helper controller work/start_root_helper.py and production monitor may both be attached; production monitor handles promotion.
+- NEXT: wait root construction/fsck, boot real disk with new kernel, validate virtio capacity/HFS mount then real Apple launchd/dyld. GUI/wrapper deferred. No full iOS PC boot verified. User-created untracked venv/ must remain untouched and out of commits.
+
+---
 ## Python CLI + firmware handoff (2026-10-20, current)
 
 - Previous local milestone commit: af2b40d. Work remains native Windows x64; no phone access, flashing, Docker or WSL.

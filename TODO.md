@@ -22,7 +22,7 @@ with Apple's launchd/SpringBoard.
 - [x] Include the test executable as an md0 RAM disk in the payload.
 - [x] Verify the console marker `SWEET userspace: init running as PID 1`.
 - [x] Observe repeated `SWEET init: still alive` messages under Windows QEMU.
-- [ ] Stream a reliable complete kernel/guest console to the host CLI.
+- [x] Stream the QEMU PL011 kernel/guest console to the host CLI (patch 0083).
 
 ## 3. Obtain iOS firmware
 
@@ -42,11 +42,12 @@ require separate compatibility work, including ARM64e/PAC and kernel ABI.
 - [ ] Build a native Windows-capable APFS/UDIF extraction pipeline that handles
       LZBITMAP and preserves permissions, ownership, symlinks, hardlinks/xattrs.
 - [ ] Produce an HFS+ root containing OS and both cryptexes, dyld shared-cache
-      links and required initial configuration. Existing mkiosroot.sh is Linux-only.
-- [ ] Choose a storage design for QEMU: persistent virtual block device + XNU
-      driver, or an explicitly sized RAM root. QEMU virt has no Redmi UFS.
-- [ ] Keep the root image within guest RAM limits if RAM-disk boot is used;
-      the current 4 GiB guest layout cannot simply hold a 16 GiB iOS image.
+      links and required initial configuration. Python prepare-root now drives
+      a temporary QEMU Linux helper; construction and final fsck in progress.
+- [x] Implement a polled modern virtio-mmio block driver and per-run qcow2
+      overlays for disk boot. Built in CI; full-root runtime validation pending.
+- [x] Keep the full root on a virtual disk; only kernel-managed RAM is placed
+      in guest memory (default 2048 MiB). Small test RAM roots remain supported.
 - [ ] Start Apple's dyld and launchd; record actual crashes and missing services.
 - [ ] Bring up backboardd/SpringBoard and verify a real home screen.
 - [ ] Add keyboard/mouse/touch-event input bridging and live display output.

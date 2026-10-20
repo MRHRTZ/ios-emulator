@@ -154,17 +154,10 @@ def run(args):
         raise ValueError(f'Kernel missing: {kernel}')
     if args.secs <= 0:
         raise ValueError('--secs must be positive')
-    if not args.test:
-        ramdisk = Path(args.root_image).resolve() if args.root_image else ROOT / 'data/root/ios-root.img'
-        if not ramdisk.is_file() or ramdisk.suffix.lower() in ('.ipsw', '.dmg'):
-            raise ValueError('Prepared iOS root image is missing/invalid. IPSW/DMG cannot boot directly. '
-                             'Use run --test for the minimal PID 1 test, or --root-image with a prepared raw image.')
-        if ramdisk.stat().st_size > 1024**3:
-            raise ValueError('Root exceeds the current 1 GiB RAM-root limit. Persistent virtual storage '
-                             'or a redesigned guest RAM layout is required; see TODO.md.')
-        is_test = False
-    else:
-        is_test = True
+    block_disk = None
+    ramdisk = None
+    is_test = args.test
+    if args.test:
         ramdisk = ROOT / 'data/test-root/test-root.img'
         ramdisk.parent.mkdir(parents=True, exist_ok=True)
         clang = find_clang()
@@ -173,16 +166,47 @@ def run(args):
         subprocess.run([clang, '-target', 'arm64-apple-ios16.0', '-c', str(TOOLS / 'sweet-init.S'),
                         '-o', str(ramdisk.with_suffix('.o'))], check=True)
         run_tool(TOOLS / 'mkinit.py', ramdisk.with_suffix('.o'), ramdisk)
+    elif args.root_image:
+        ramdisk = Path(args.root_image).resolve()
+        if not ramdisk.is_file() or ramdisk.stat().st_size > 1024**3:
+            raise ValueError('Prepared RAM root must exist and be at most 1 GiB; use --disk-image for a full root')
+    else:
+        block_disk = Path(args.disk_image).resolve() if args.disk_image else ROOT / 'data/root/ios-root.img'
+        if not block_disk.is_file():
+            raise ValueError('Prepared iOS disk missing. Complete prepare-root first, or use run --test explicitly.')
+        with block_disk.open('rb') as disk:
+            disk.seek(1024)
+            if disk.read(2) not in (b'H+', b'HX'):
+                raise ValueError('Root block image must be a prepared HFS+/HFSX volume')
+        symbols = subprocess.check_output(['llvm-nm', '--defined-only', str(kernel)], text=True)
+        if '_sweet_virtio_rootdev' not in symbols:
+            raise ValueError('This kernel has no virtio block driver; use the kernel built with patch 0082')
     out = ROOT / 'data/runs' / (time.strftime('%Y%m%d-%H%M%S') + f'-{time.time_ns() % 1000000:06d}')
     out.mkdir(parents=True, exist_ok=False)
     print('Mode: XNU + minimal test PID 1 (NOT full iOS)' if is_test else 'Mode: XNU + supplied root image', flush=True)
     adt, payload = out / 'qemu.adt', out / 'payload.bin'
-    run_tool(TOOLS / 'mkadt.py', adt, '--qemu')
+    adt_args = ['--qemu'] + (['--memory-mib', str(args.memory_mib)] if block_disk else [])
+    run_tool(TOOLS / 'mkadt.py', adt, *adt_args)
     command_line = ('debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress '
-                    'rd=md0 sweettouch=0 sweetkeys=0 sweetusb=0')
-    run_tool(TOOLS / 'mkpayload.py', kernel, adt, payload, '--ramdisk', ramdisk, '--cmdline', command_line)
+                    'sweettouch=0 sweetkeys=0 sweetusb=0 sweetlog=0 ')
+    if block_disk:
+        command_line += ('rd=vioroot0 viorw=1 rootrw=1 unentitled_ios_sim_launch=1 '
+                         'ignition_level=1 launchd_unsecure_cache=1 wdt=-1 wdt_test=no_user_checkin')
+        run_tool(TOOLS / 'mkpayload.py', kernel, adt, payload, '--cmdline', command_line)
+    else:
+        command_line += 'rd=md0'
+        run_tool(TOOLS / 'mkpayload.py', kernel, adt, payload, '--ramdisk', ramdisk, '--cmdline', command_line)
     command = [sys.executable, str(TOOLS / 'qemu-sweet.py'), str(payload), str(out),
-               '--secs', str(args.secs), '--kernel', str(kernel), '--fail-on-panic']
+               '--secs', str(args.secs), '--kernel', str(kernel), '--fail-on-panic', '--live-serial']
+    if block_disk:
+        runner = load_runner()
+        qemu_bin = runner.find_qemu(args.qemu)
+        if not qemu_bin:
+            raise ValueError('QEMU not found')
+        image_tool = Path(qemu_bin).with_name('qemu-img.exe' if sys.platform == 'win32' else 'qemu-img')
+        overlay = out / 'root-overlay.qcow2'
+        subprocess.run([str(image_tool), 'create', '-f', 'qcow2', '-F', 'raw', '-b', str(block_disk), str(overlay)], check=True)
+        command += ['--disk', str(overlay), '--disk-format', 'qcow2']
     if args.qemu:
         command += ['--qemu', args.qemu]
     process = subprocess.run(command, cwd=ROOT)
@@ -190,7 +214,7 @@ def run(args):
     result = json.loads((out / 'result.json').read_text()) if (out / 'result.json').exists() else {'status': 'runner_error'}
     marker = 'SWEET userspace: init running as PID 1'
     reached = marker in screen
-    summary = {'mode': 'test' if is_test else 'custom-root', 'qemu_result': result,
+    summary = {'mode': 'test' if is_test else ('virtio-ios-root' if block_disk else 'custom-ram-root'), 'qemu_result': result,
                'test_pid1_observed': reached, 'full_ios_boot_verified': False,
                'runner_exit_code': process.returncode, 'output': str(out)}
     firmware.write_json(out / 'summary.json', summary)
@@ -205,6 +229,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('doctor', help='Check QEMU/Python/LLVM/kernel')
+    prepare = commands.add_parser('prepare-root', help='Build the iOS HFS+ disk using a temporary QEMU helper')
+    prepare.add_argument('--timeout', type=int, default=3600)
     download = commands.add_parser('download', help='Download latest iPhone X IPSW with progress/resume/checksum')
     download.add_argument('--version', default='latest', help='Latest for iPhone X, or an exact version')
     for name in ('inspect', 'extract', 'device-tree', 'probe-root'):
@@ -212,16 +238,25 @@ def main():
         command.add_argument('--ipsw')
     boot = commands.add_parser('run', help='Boot prepared iOS root, or explicitly opt in to --test')
     mode = boot.add_mutually_exclusive_group()
-    mode.add_argument('--root-image')
+    mode.add_argument('--root-image', help='Small prepared RAM root')
+    mode.add_argument('--disk-image', help='Prepared HFS+ root block image (per-run overlay)')
     mode.add_argument('--test', action='store_true', help='Run the minimal test PID 1, not Apple iOS')
     boot.add_argument('--kernel')
     boot.add_argument('--qemu')
+    boot.add_argument('--memory-mib', type=int, default=2048, help='Kernel RAM for disk boot (256..4096 MiB)')
     boot.add_argument('--secs', type=float, default=45)
     commands.add_parser('status', help='Show saved download and last-run status')
     args = parser.parse_args()
     try:
         if args.command == 'doctor':
             return doctor()
+        if args.command == 'prepare-root':
+            import root_builder
+            qemu = load_runner().find_qemu()
+            if not qemu:
+                raise ValueError('QEMU not found')
+            root_builder.prepare(ROOT, qemu, args.timeout)
+            return 0
         if args.command == 'download':
             firmware.download(ROOT / 'data/firmware', args.version)
             return 0
