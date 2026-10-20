@@ -1,3 +1,11 @@
+## Two-core auto-start and resume verified - 2026-10-21 05:19 WIB
+
+- Kernel0093 run20261021-051133-594800 / QEMU12316 / GUI1473 window1050996: fresh Start at05:11:33; no manual Home/Power thereafter. Home visibly reached by05:15:11 through automatic wake/swipe (four Power pairs and one touch gesture). Repeat on four CPUs before generalizing.
+- Paused at05:15:20; UTC lag99sec by05:16:59. Resume around05:17:08 emitted calendar-resynchronized marker; lag returned1.05sec by05:17:13 without warning/panic. Settings opened after resume; status bar reached3:18 by05:18:33 and3:19 by05:19:41, matching host minute in its existing guest timezone. Two-core UI/calendar resume PASS; status bar does not repaint immediately.
+- Kernel0094 CI39505871637 SUCCESS. Artifact xnu/out-0094 SHA7604042b608b242b6f7cd400bb8aad6f1e68f2415987a21c510a443e944b56f6 verified against SHA256SUMS. Next test four CPUs and orderly shutdown. Default0091 remains intact.
+- Read-only wallpaper research: Nugget identifies iOS16 PosterBoard descriptor structure59. PosterForge demonstrates static CAML descriptors. Source copies under ignored data/tools/posterforge-source; no downloaded source executed. Inspect actual guest store before adding a reversible descriptor. NASA wallpaper remains local and uninstalled.
+
+---
 ## Two-core clock run started - 2026-10-21
 
 - Current GUI1473/window1050996, kernel0093 explicit path, QEMU12316 run20261021-051133-594800,2CPU/4096MiB/target30. Started05:11:33 without manual Home/Power. DO NOT intervene until auto-unlock outcome recorded. UTC diagnostic at05:12:39 shows guest1792534358 versus host1792534359 (~1sec lag); capability3, no startup input yet at that point.
