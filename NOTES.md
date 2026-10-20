@@ -1,3 +1,10 @@
+## Final push verification 2026-10-21
+
+- dev/window-native implementation commit 5ecac64 pushed; main documentation commit 6ca8d9e pushed and confirmed via ls-remote. Final spinner follow-up uses an explicit painter color because inherited QWidget stylesheet overrides palette text colors.
+- Re-ran all 33 host tests PASS; modal dialog smoke check confirms three dropdowns and explicit white dark spinner. Offscreen PNG data/gui/settings-dark-check.png has missing font glyphs on this platform, so it is NOT proof of native Windows text rendering. Real guest motion/latency remains unverified.
+- No Chrome IPA present; Safari/Chrome work skipped per user allowance. Remaining runtime TODO retained. No guest was booted/stopped or disk modified in this session.
+
+---
 ## Checkpoint 2026-10-21
 
 - Audited remote: dev/window-native contained 4e29f0c; origin/main still 11da58b. Previous checkpoint push completed only for development. No running QEMU PID from active.json found.

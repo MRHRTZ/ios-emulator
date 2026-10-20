@@ -356,7 +356,7 @@ class Spinner(QWidget):
     def hideEvent(self,event): self.timer.stop();super().hideEvent(event)
     def paintEvent(self,event):
         painter=QPainter(self);painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(self.palette().color(QPalette.ColorRole.WindowText),2,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(QColor(getattr(self,'color','#242832')),2,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
         painter.drawArc(QRectF(3,3,10,10),self.angle*16,240*16)
 
 
@@ -557,6 +557,7 @@ class Window(QMainWindow):
         spinner_palette=QPalette(palette)
         spinner_palette.setColor(QPalette.ColorRole.WindowText,QColor('#ffffff' if dark else fg))
         if hasattr(self,'progress'):
+            self.progress.color='#ffffff' if dark else fg
             self.progress.setPalette(spinner_palette)
             self.progress.update()
         self.setStyleSheet(f"""
