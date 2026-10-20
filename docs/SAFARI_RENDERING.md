@@ -35,7 +35,10 @@ selection alone cannot complete these guest interfaces.
    to mobile and Safari-container preferences on2026-10-20. Original value was
    absent in both. SafariShared's guest binary exposes the WebKitExperimental%@
    preference-name pattern. Backup suffix: .before-dom-render.plist, including
-   prior file existence and preferences. Outcome pending runtime comparison.
+   prior file existence and preferences. After restart, example.com remained white while Safari showed Reader Available.
+   Effective runtime feature value is still unverified; this experiment has not
+   fixed the problem. The local data-HTML test was not submitted because host
+   text-packet input had no visible effect.
 
 Only the second named feature was changed in the new experiment. It is not a
 confirmed fix or a supported application default. Preserve backups for reversal.

@@ -1,3 +1,14 @@
+## STOP CHECKPOINT - usage1% remaining (2026-10-20 21:52 WIB, latest)
+
+- User requested continuation down to1-3%; account now99% used/1% remaining, weekly31% used. STOP work after saving this checkpoint.
+- Commit baffa73 and67d4eb1 pushed to origin/dev/window-native.33 tests PASS. Release/main untouched; firmware/captures/venv excluded.
+- CURRENT QEMU48444 run20261020-214737-063800, GUI exec54145/window2823190. Guest running at~9FPS, Safari address-edit screen with example.com selected. Last action sky.type_text local data:text/html,%3Cbody%20bgcolor=red%3ETEST had NO visible effect after4secs. Do NOT claim VK_PACKET fix works live. Physical key e/Return worked previous run. Next inspect actual Qt text/native key event delivery before expanding mappings; no fabricated typing success.
+- New sidebar Home swipe successfully unlocked to clean Home after manual sidebar click. Initial automatic startup swipe had been acknowledged but lock still visible, so full automatic unlock remains UNVERIFIED/not complete.
+- DOM-render pref experiment: after fresh boot, Safari example.com loaded and showed Reader Available, yet page body stayed WHITE. Flag effective value in Safari's feature runtime still not verified; cannot distinguish ineffective preference override vs incomplete graphics path. Backups intact. Local data-HTML comparison was NOT submitted because text entry did not take effect. Do not call it a successful network-independent test.
+- Spinner LEFT of text and FPS separator removal visually verified after GUI reload. User changed View theme during boot; preserve user choice. Host UI and guest clock current-day. Guest writable overlay persists; no helper active.33 tests pass but touch-scroll pacing still needs live verification.
+- Online sources/experiment details docs/SAFARI_RENDERING.md. Continue from fresh active.json/sky screenshot. Pending Safari drawing, genuine wallpaper, automatic unlock, text packets/IME, Settings scroll, held-key cleanup runtime. Do not run stale save_gui_checkpoint.py or old prepare/install scripts. Wrapper/APFS deferred.
+
+---
 ## DOM-render / PC input checkpoint (2026-10-20 21:49 WIB, newest)
 
 - Usage95% used/5% remaining, user requests stop/checkpoint at1-3% remaining. Branch dev/window-native, last commit67d4eb1. Pending source: Windows ASCII VK_PACKET handling plus stable OEM/native key tokens, regression tests; touch packets wait for prior guest acknowledgment to prevent down/move/up collapsing into a tap in one poll.33 tests PASS with PYTHONPATH=tools. Touch pacing/new text path still need live verification.
