@@ -246,7 +246,19 @@ class PcSession:
             status = {'pid': self.process.pid, 'stage': self.stage, 'input_ready': self.input_ready,
                       'header': self.header, 'updated_at': time.time(), 'output': str(self.out)}
             path = self.out/'live.json'
-            temporary = path.with_suffix('.tmp'); temporary.write_text(json.dumps(status, indent=2)); temporary.replace(path)
+            temporary = path.with_suffix('.tmp')
+            try:
+                temporary.write_text(json.dumps(status, indent=2))
+                temporary.replace(path)
+            except OSError:
+                # Windows readers/AV may temporarily deny atomic replacement.
+                # Diagnostic metadata must never terminate a running guest;
+                # the next poll retries with a fresh snapshot.
+                if not getattr(self, 'status_warning', False):
+                    delta += '\nLive status file temporarily unavailable; guest continues.\n'
+                    self.status_warning = True
+            else:
+                self.status_warning = False
         return delta
 
     def frame(self):

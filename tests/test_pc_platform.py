@@ -135,3 +135,22 @@ class DesktopInteractionTests(unittest.TestCase):
         self.assertTrue(window.log_button.isCheckable())
         self.assertTrue(window.home.toolTip())
         window.close()
+
+
+class StatusSharingTests(unittest.TestCase):
+    def test_diagnostic_file_sharing_violation_does_not_abort_guest(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as folder:
+            session=PcSession('.')
+            session.out=Path(folder)
+            session.process=SimpleNamespace(pid=42,poll=lambda:None)
+            session.qtest=MemoryChannel()
+            with patch.object(Path,'replace',side_effect=PermissionError('Windows sharing violation')):
+                self.assertIn('guest continues',session.poll())
+            self.assertTrue(session.input_ready)
+            session.last_status=0
+            session.poll()
+            self.assertTrue((session.out/'live.json').is_file())
+            self.assertFalse(session.status_warning)
