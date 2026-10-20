@@ -154,3 +154,45 @@ class StatusSharingTests(unittest.TestCase):
             session.poll()
             self.assertTrue((session.out/'live.json').is_file())
             self.assertFalse(session.status_warning)
+
+
+class FrameCacheTests(unittest.TestCase):
+    def test_frame_cache_is_unique_outside_guest_disk_and_cleaned(self):
+        from pathlib import Path
+        from types import SimpleNamespace
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            session=PcSession(folder);session.out=Path(folder)
+            def export(command,**args):
+                self.assertEqual(command,'pmemsave')
+                self.assertNotEqual(Path(args['filename']).parent,session.out)
+                Path(args['filename']).write_bytes(b'abcd')
+            session.qmp=SimpleNamespace(call=export,close=lambda:None)
+            with patch('pc_session.FB_WIDTH',1),patch('pc_session.FB_HEIGHT',1):
+                self.assertEqual(session.frame(),b'abcd')
+            path=Path(session.frame_directory.name)
+            self.assertGreater(session.frame_export_ms,0)
+            session.stop()
+            self.assertFalse(path.exists())
+
+
+class StartupDisplayTests(unittest.TestCase):
+    def test_apple_then_black_wakes_and_white_clock_schedules_home_once(self):
+        from emulator_gui import Window
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QImage,QPainter,QColor
+        from types import SimpleNamespace
+        app=QApplication.instance() or QApplication([])
+        window=Window(auto_start=False);window.worker=SimpleNamespace();window.stage='display'
+        image=QImage(1080,2400,QImage.Format.Format_RGB32);image.fill(QColor('black'))
+        painter=QPainter(image);painter.fillRect(400,1000,280,300,QColor('white'));painter.end()
+        with patch.object(window,'key_click') as key,patch('emulator_gui.QTimer.singleShot') as schedule:
+            window.new_frame(image)
+            key.assert_not_called();schedule.assert_not_called()
+            image.fill(QColor('black'));window.new_frame(image)
+            key.assert_called_once_with(0)
+            painter=QPainter(image);painter.fillRect(100,120,600,240,QColor('white'));painter.end()
+            window.new_frame(image);window.new_frame(image)
+            schedule.assert_called_once()
+            self.assertFalse(window.auto_home_pending)
+        window.worker=None;window.close()

@@ -337,6 +337,10 @@ class Window(QMainWindow):
         self.stage = 'stopped'
         self.stopping = False
         self.auto_home_pending = True
+        self.startup_display_at = None
+        self.startup_seen_image = False
+        self.startup_wake_count = 0
+        self.startup_last_wake = 0.
         self.buttons = []
         if self.settings_path.exists():
             try:
@@ -418,7 +422,7 @@ class Window(QMainWindow):
         for a in (self.start_action, self.pause_action, self.stop_action, self.restart_action):
             menu.addAction(a)
         menu.addSeparator()
-        menu.addAction('Settings...', self.preferences)
+        self.settings_action=menu.addAction('Settings...', self.preferences)
         menu.addSeparator()
         menu.addAction('Exit', self.close, QKeySequence('Alt+F4'))
 
@@ -564,6 +568,10 @@ class Window(QMainWindow):
         self.paused = False
         self.stopping = False
         self.auto_home_pending = True
+        self.startup_display_at = None
+        self.startup_seen_image = False
+        self.startup_wake_count = 0
+        self.startup_last_wake = 0.
         self.screen.image = QImage()
         self.screen.message = 'Starting iOS...'
         self.screen.update()
@@ -577,16 +585,28 @@ class Window(QMainWindow):
 
     def new_frame(self, image):
         if self.stopping or not self.worker: return
-        # Auto-Home once the colored lock screen is visible, not at first black/Apple frame.
         if self.auto_home_pending and self.stage=='display':
-            colorful=0
-            for y in range(20, image.height()//3, 35):
+            now=time.monotonic()
+            if self.startup_display_at is None:self.startup_display_at=now
+            bright=top_bright=colorful=0
+            for y in range(20,image.height(),35):
                 for x in range(20,image.width(),35):
                     c=image.pixelColor(x,y)
-                    colorful += max(c.red(),c.green(),c.blue())-min(c.red(),c.green(),c.blue())>30
-            if colorful>=8:
+                    lit=max(c.red(),c.green(),c.blue())>40
+                    bright+=lit
+                    if y<image.height()//3:
+                        top_bright+=lit
+                        colorful+=max(c.red(),c.green(),c.blue())-min(c.red(),c.green(),c.blue())>30
+            if colorful>=8 or top_bright>=8:
                 self.auto_home_pending=False
+                self.append_log('Startup: lock/home frame detected; sending Home automatically.')
                 QTimer.singleShot(700,self.go_home)
+            elif bright>=8:
+                self.startup_seen_image=True
+            elif (self.startup_seen_image or now-self.startup_display_at>=30) and self.startup_wake_count<3 and now-self.startup_last_wake>=15:
+                self.startup_wake_count+=1;self.startup_last_wake=now
+                self.append_log('Startup: display asleep; sending Power to wake it.')
+                self.key_click(0)
         self.screen.image = image
         self.screen.update()
 
@@ -602,6 +622,7 @@ class Window(QMainWindow):
         self.stop_action.setEnabled(active)
         self.restart_action.setEnabled(active)
         self.settings_button.setEnabled(not active)
+        self.settings_action.setEnabled(not active)
         self.screen.enabled_input = active and input_ready and stage == 'display'
         self.screenshot_button.setEnabled(active and not self.screen.image.isNull())
         self.screenshot_action.setEnabled(active and not self.screen.image.isNull())
@@ -786,4 +807,10 @@ def main(auto_start=True, kernel=None, overlay=None):
 
 
 if __name__ == '__main__':
-    raise SystemExit(main(auto_start='--no-start' not in sys.argv))
+    import argparse
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--no-start',action='store_true')
+    parser.add_argument('--kernel',type=Path,help='Matching kernel for a controlled comparison')
+    parser.add_argument('--overlay',type=Path,help='Writable qcow2 overlay (never a raw base image)')
+    args=parser.parse_args()
+    raise SystemExit(main(auto_start=not args.no_start,kernel=args.kernel,overlay=args.overlay))

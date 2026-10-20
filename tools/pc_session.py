@@ -10,6 +10,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 from pc_platform import multicore_boot_args
@@ -110,6 +111,8 @@ class PcSession:
         self.stage = 'stopped'
         self.last_status = 0
         self.held_inputs = {}
+        self.frame_directory = None
+        self.frame_export_ms = 0.
 
     def start(self):
         import adt
@@ -244,7 +247,8 @@ class PcSession:
         if time.monotonic()-self.last_status >= 1:
             self.last_status = time.monotonic()
             status = {'pid': self.process.pid, 'stage': self.stage, 'input_ready': self.input_ready,
-                      'header': self.header, 'updated_at': time.time(), 'output': str(self.out)}
+                      'header': self.header, 'updated_at': time.time(), 'output': str(self.out),
+                      'frame_export_ms': round(self.frame_export_ms, 2)}
             path = self.out/'live.json'
             temporary = path.with_suffix('.tmp')
             try:
@@ -264,7 +268,12 @@ class PcSession:
     def frame(self):
         # Binary QMP export is ~3x faster than base64 qtest on this Windows host.
         # The temporary file stays in the Windows cache when memory permits.
-        path = self.out/'framebuffer.raw'
+        # Keep high-frequency frame writes on the host temporary volume, not
+        # beside a potentially HDD-backed root disk. Unique per session.
+        if self.frame_directory is None:
+            self.frame_directory = tempfile.TemporaryDirectory(prefix='ios-emulator-frame-')
+        path = Path(self.frame_directory.name)/'framebuffer.raw'
+        started = time.perf_counter()
         if not path.exists():
             path.touch()
             if os.name == 'nt':
@@ -275,6 +284,7 @@ class PcSession:
         data = path.read_bytes()
         if len(data) != size:
             raise RuntimeError('QEMU framebuffer could not be read completely.')
+        self.frame_export_ms = (time.perf_counter()-started)*1000
         return data
 
     def input(self, kind, code, down, x=0, y=0):
@@ -325,6 +335,9 @@ class PcSession:
             if channel:
                 try: channel.close()
                 except OSError: pass
+        if self.frame_directory is not None:
+            self.frame_directory.cleanup()
+            self.frame_directory = None
         if self.errors:
             self.errors.close()
         if self.lock_file:
