@@ -409,3 +409,21 @@ class OrderlyShutdownTests(unittest.TestCase):
         with patch('emulator_gui.PcSession',return_value=session):w.run()
         session.request_shutdown.assert_called_once();session.frame.assert_not_called()
         session.stop.assert_called_once();self.assertEqual(errors,[''])
+
+
+class SupportedCpuLimitTests(unittest.TestCase):
+    def test_gui_rejects_saved_cpu_counts_that_current_pc_kernel_panics_on(self):
+        import tempfile,json
+        from pathlib import Path
+        from emulator_gui import Window,host_limits
+        from PySide6.QtWidgets import QApplication
+        app=QApplication.instance() or QApplication([])
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);settings=root/'data/gui/settings.json'
+            settings.parent.mkdir(parents=True)
+            settings.write_text(json.dumps(dict(cpu_count=8)))
+            with patch('emulator_gui.ROOT',root),patch('emulator_gui.os.cpu_count',return_value=64):
+                self.assertEqual(host_limits()['cpu_count'],4)
+                window=Window(auto_start=False)
+                self.assertLessEqual(window.settings['cpu_count'],4)
+                window.close()
