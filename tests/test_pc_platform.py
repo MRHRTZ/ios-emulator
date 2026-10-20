@@ -272,3 +272,32 @@ class VideoMetadataTests(unittest.TestCase):
                 self.assertEqual(s.frame(),b'abcd');self.assertEqual(s.frame(),b'abcd')
             self.assertEqual(len(exports),2)
             s.frame_directory.cleanup()
+
+
+class ClipboardInputTests(unittest.TestCase):
+    def test_paste_is_text_not_guest_control_v_and_modifier_is_released(self):
+        from emulator_gui import Screen
+        from PySide6.QtCore import Qt,QEvent
+        from PySide6.QtGui import QKeyEvent,QInputMethodEvent
+        from PySide6.QtWidgets import QApplication
+        app=QApplication.instance() or QApplication([])
+        screen=Screen();screen.enabled_input=True
+        keyboard=[];text=[];notices=[]
+        screen.keyboard.connect(lambda key,down:keyboard.append((key,down)))
+        screen.text_input.connect(text.append);screen.input_notice.connect(notices.append)
+        old=app.clipboard().text()
+        try:
+            app.clipboard().setText('Ab9!')
+            screen.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress,Qt.Key.Key_Control,Qt.KeyboardModifier.ControlModifier))
+            screen.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress,Qt.Key.Key_V,Qt.KeyboardModifier.ControlModifier))
+            screen.keyReleaseEvent(QKeyEvent(QEvent.Type.KeyRelease,Qt.Key.Key_V,Qt.KeyboardModifier.ControlModifier))
+            screen.keyReleaseEvent(QKeyEvent(QEvent.Type.KeyRelease,Qt.Key.Key_Control,Qt.KeyboardModifier.NoModifier))
+            self.assertEqual(text,['Ab9!'])
+            self.assertEqual(keyboard,[(224,True),(224,False),(224,True),(224,False)])
+            self.assertFalse(screen.held_keys)
+            screen.commit_text('Unicode: \u00e9')
+            self.assertEqual(len(text),1);self.assertEqual(len(notices),1)
+            event=QInputMethodEvent();event.setCommitString('input');screen.inputMethodEvent(event)
+            self.assertEqual(text[-1],'input')
+        finally:
+            app.clipboard().setText(old);screen.close()

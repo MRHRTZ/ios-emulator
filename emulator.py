@@ -3,7 +3,7 @@
 import argparse
 import importlib.util
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import plistlib
 import re
 import shutil
@@ -63,17 +63,43 @@ def choose_ipsw(value=None):
 def manifest_info(ipsw):
     with zipfile.ZipFile(ipsw) as archive:
         manifest = plistlib.loads(archive.read('BuildManifest.plist'))
+        if not isinstance(manifest, dict):
+            raise ValueError('BuildManifest must contain a dictionary')
         identities = manifest.get('BuildIdentities', [])
+        if not isinstance(identities, list) or any(not isinstance(item, dict) or
+                not isinstance(item.get('Info', {}), dict) for item in identities):
+            raise ValueError('BuildManifest has malformed build identities')
         identity = next((item for item in identities
                          if item.get('Info', {}).get('DeviceClass') == 'd22ap'), None)
         if identity is None:
             raise ValueError('BuildManifest has no D22AP identity for the configured target')
+        entries = identity.get('Manifest', {})
+        if not isinstance(entries, dict):
+            raise ValueError('BuildManifest has malformed component entries')
         components = {}
+        names = set()
         for role in ('OS', 'Cryptex1,SystemOS', 'Cryptex1,AppOS', 'DeviceTree'):
-            entry = identity.get('Manifest', {}).get(role)
-            if entry and entry.get('Info', {}).get('Path'):
-                path = entry['Info']['Path']
-                components[role] = {'path': path, 'size': archive.getinfo(path).file_size}
+            entry = entries.get(role)
+            if entry is None:
+                continue
+            if not isinstance(entry, dict) or not isinstance(entry.get('Info'), dict):
+                raise ValueError(f'BuildManifest has malformed component: {role}')
+            path = entry['Info'].get('Path')
+            if (not isinstance(path, str) or not path or '\\' in path or
+                    PurePosixPath(path).is_absolute() or '..' in PurePosixPath(path).parts):
+                raise ValueError(f'BuildManifest has an unsafe component path: {role}')
+            name = PurePosixPath(path).name.casefold()
+            if (name in names or name in ('buildmanifest.plist', 'manifest.json') or
+                    any(char in name for char in '<>:"|?*') or name.endswith(('.', ' '))):
+                raise ValueError(f'BuildManifest has a conflicting component filename: {role}')
+            names.add(name)
+            try:
+                member = archive.getinfo(path)
+            except KeyError:
+                raise ValueError(f'BuildManifest component is missing from IPSW: {role}') from None
+            if member.is_dir() or member.file_size == 0:
+                raise ValueError(f'BuildManifest component is empty: {role}')
+            components[role] = {'path': path, 'size': member.file_size}
         return {'ipsw': str(ipsw), 'version': manifest.get('ProductVersion'),
                 'build': manifest.get('ProductBuildVersion'),
                 'devices': manifest.get('SupportedProductTypes'),
@@ -84,15 +110,19 @@ def extract(ipsw):
     info = manifest_info(ipsw)
     if 'iPhone10,3' not in (info['devices'] or []):
         raise ValueError('Firmware does not target the iPhone X used by this project')
-    destination = ROOT / 'data/extracted' / info['build']
-    destination.mkdir(parents=True, exist_ok=True)
+    build = info['build']
+    if not isinstance(build, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', build):
+        raise ValueError('BuildManifest has an invalid build identifier')
     components = info['components']
     if len(components) != 4:
         raise ValueError('Expected OS, both cryptexes and DeviceTree in BuildManifest')
+    destination = ROOT / 'data/extracted' / build
+    destination.mkdir(parents=True, exist_ok=True)
     remaining = sum(value['size'] for value in components.values()
                     if not (destination / Path(value['path']).name).exists())
     if shutil.disk_usage(destination).free < remaining + 64 * 1024**2:
         raise OSError('Not enough free disk space for extracted components')
+    (destination / 'manifest.json').unlink(missing_ok=True)
     with zipfile.ZipFile(ipsw) as archive:
         (destination / 'BuildManifest.plist').write_bytes(archive.read('BuildManifest.plist'))
         for role, component in components.items():
@@ -111,16 +141,20 @@ def extract(ipsw):
             partial = target.with_suffix(target.suffix + '.part')
             done = 0
             last = 0
-            with archive.open(component['path']) as source, partial.open('wb') as output:
-                while block := source.read(firmware.CHUNK):
-                    output.write(block)
-                    done += len(block)
-                    now = time.monotonic()
-                    if now - last >= 1:
-                        print(f'\rExtract {role}: {done * 100 / component["size"]:6.2f}%    ', end='', flush=True)
-                        last = now
-            if done != component['size']:
-                raise ValueError(f'Extracted component size mismatch: {role}')
+            try:
+                with archive.open(component['path']) as source, partial.open('wb') as output:
+                    while block := source.read(firmware.CHUNK):
+                        output.write(block)
+                        done += len(block)
+                        now = time.monotonic()
+                        if now - last >= 1:
+                            print(f'\rExtract {role}: {done * 100 / component["size"]:6.2f}%    ', end='', flush=True)
+                            last = now
+                if done != component['size']:
+                    raise ValueError(f'Extracted component size mismatch: {role}')
+            except BaseException:
+                partial.unlink(missing_ok=True)
+                raise
             partial.replace(target)
             print(f'\rExtract {role}: 100.00% CRC OK -> {target.name}', flush=True)
     firmware.write_json(destination / 'manifest.json', info)

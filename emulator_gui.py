@@ -127,6 +127,10 @@ class Worker(QObject):
                     elif command[0] == 'input' and not paused and self.session.input_ready:
                         order += 1
                         heapq.heappush(scheduled, (now, order, command[1:]))
+                    elif command[0] == 'text' and not paused and self.session.input_ready:
+                        for usage, down in ascii_key_strokes(command[1]):
+                            order += 1
+                            heapq.heappush(scheduled, (now, order, (3, usage, down, 0, 0)))
                     elif command[0] == 'gesture' and not paused and self.session.input_ready:
                         _, x0, y0, x1, y1, duration, hold = command
                         for step in range(2):
@@ -174,6 +178,8 @@ class Worker(QObject):
 class Screen(QWidget):
     touch = Signal(bool, int, int)
     keyboard = Signal(int, bool)
+    text_input = Signal(str)
+    input_notice = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -252,8 +258,31 @@ class Screen(QWidget):
         for usage in self.held_keys.values(): self.keyboard.emit(usage, False)
         self.held_keys.clear()
 
+    def commit_text(self, text):
+        if not text:
+            return
+        if len(text)>4096 or not ascii_key_strokes(text):
+            self.input_notice.emit('Paste supports up to 4096 printable ASCII characters (US keyboard layout).')
+            return
+        held=self.held_keys.copy()
+        self.release_keys()
+        self.text_input.emit(text)
+        # A physically held modifier must still receive its eventual release.
+        for token,usage in held.items():
+            self.held_keys[token]=usage
+            self.keyboard.emit(usage,True)
+
+    def inputMethodEvent(self, event):
+        if self.enabled_input and self.capture_keyboard and event.commitString():
+            self.commit_text(event.commitString());event.accept();return
+        super().inputMethodEvent(event)
+
     def keyPressEvent(self, event):
         if self.enabled_input and self.capture_keyboard:
+            if event.matches(QKeySequence.StandardKey.Paste):
+                self.commit_text(QApplication.clipboard().text())
+                event.accept()
+                return
             # Windows SendInput/assistive text uses VK_PACKET, without physical
             # modifier events. Convert supported ASCII into complete HID strokes.
             if event.nativeVirtualKey() == 0xE7 or event.key() == Qt.Key.Key_unknown:
@@ -402,6 +431,8 @@ class Window(QMainWindow):
         self.screen = Screen()
         self.screen.touch.connect(self.touch)
         self.screen.keyboard.connect(self.keyboard)
+        self.screen.text_input.connect(self.paste_text)
+        self.screen.input_notice.connect(lambda text:self.show_status_message(text,6000))
 
         center = QWidget()
         layout = QHBoxLayout(center)
@@ -773,6 +804,10 @@ class Window(QMainWindow):
         if self.worker and not self.stopping:
             self.worker.submit('input',3,usage,down,0,0)
 
+    def paste_text(self, text):
+        if self.worker and not self.stopping:
+            self.worker.submit('text',text)
+
     def key(self, code, down):
         if self.worker and self.screen.enabled_input:
             self.worker.submit('input', 2, code, down, 0, 0)
@@ -860,7 +895,7 @@ class Window(QMainWindow):
             " â€¢ Ctrl+S: Save Screenshot\n"
             " â€¢ Ctrl+R: Rotate Screen\n"
             " â€¢ F11: Toggle Full Screen\n\n"
-            "Click the iOS display to capture the PC keyboard (kernel 0091+)."
+            "Click the iOS display to capture the PC keyboard (kernel 0091+).\nCtrl+V pastes printable ASCII from the host clipboard (US layout)."
         )
         QMessageBox.information(self, "Emulator Controls", msg)
 

@@ -1,3 +1,11 @@
+## Input/extraction milestone — 2026-10-21
+
+- Kernel0092 CI39503279573 currently building (source df85fa3). Local syntax compile passed; do not install until CI/checksum checks pass.
+- Runtime0091 run20261021-044302-615800 reached lock/Home. Manual Home succeeded; automatic unlock still ambiguous because manual action overlapped final startup. Settings rendered full page after launch wait; actual PC drag scrolled from upper rows to lower apps list. Physical E visibly entered Spotlight. type_text Ab9! did not appear; header advanced4 events, consistent with tool-generated Ctrl+V rather than VK_PACKET (inference, not event trace).
+- Implemented host Ctrl+V clipboard-as-ASCII input, commits via IME ASCII, saved physical modifiers released/restored, max4096 characters and explicit unsupported-text notice. Text travels as one bounded command then HID strokes, avoiding queue overflow. Must reload GUI and runtime-verify; no claim live paste success yet. Unicode layout/IME composition beyond ASCII remains unsupported.
+- Extraction now checks malformed identity/components, member existence, safe build identifier, unique Windows basenames; incomplete CRC-failed components removed and stale manifest-ready marker invalidated before revalidation. Added synthetic ZIP extraction/reuse/corruption/malformed tests. 41 host tests PASS. TODO regression coverage marked complete. No firmware extraction run against real disks while guest active.
+
+---
 ## Frame metadata work in progress — 2026-10-21
 
 - User requests continued TODO work until 1–3% five-hour allowance remains; Safari tests deferred. Initial allowance remaining 97%. Computer Use authorized.

@@ -76,7 +76,7 @@ must report missing prerequisites honestly, never label the test PID 1 as iOS.
 - [x] GUI CPU/RAM/refresh settings, bounds, and English failure messages.
 - [x] English icon sidebar, hover labels, no touch-area tooltip.
 - [x] Cover topology/RTC, ring backpressure/wrap, coordinates and GUI labels in host tests.
-- [ ] Extend regression coverage for extraction, malformed manifests and cleanup.
+- [x] Extend regression coverage for extraction, malformed manifests and cleanup.
 - [ ] Add a reproducible clean-Windows setup test.
 
 ## 6. Single-app wrapper (after CLI works with real iOS)
