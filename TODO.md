@@ -1,0 +1,72 @@
+# Windows emulator TODO
+
+Goal: native Windows CLI first; one bundled desktop app later. Python owns the
+workflow. QEMU provides ARM64 emulation. Do not confuse the minimal test process
+with Apple's launchd/SpringBoard.
+
+## 1. Windows CLI baseline
+
+- [x] Discover QEMU automatically and allow explicit executable selection.
+- [x] Use loopback TCP QMP and Windows-compatible paths.
+- [x] Execute ARM64 code and verify register/memory export on real QEMU.
+- [x] Download a kernel build and verify its provenance/checksums.
+- [x] CLI commands: doctor, download, inspect, extract, run, status.
+- [x] Download with Python, progress %, speed, ETA, automatic retry and resume.
+- [x] Check firmware size and SHA-256 before marking it ready.
+- [x] Keep Apple firmware, generated images and runtime data out of Git.
+- [ ] Provide a distributable kernel artifact with a stable release URL.
+
+## 2. Boot a minimal userspace process
+
+- [x] Build a static ARM64 test PID 1 using existing LLVM and Python tools.
+- [x] Include the test executable as an md0 RAM disk in the payload.
+- [x] Verify the console marker `SWEET userspace: init running as PID 1`.
+- [x] Observe repeated `SWEET init: still alive` messages under Windows QEMU.
+- [ ] Stream a reliable complete kernel/guest console to the host CLI.
+
+## 3. Obtain iOS firmware
+
+- [x] Finish latest compatible iPhone X IPSW download and SHA-256 validation.
+- [x] Read BuildManifest and identify OS, SystemOS, AppOS and device tree.
+- [x] Extract those components with CRC verification and progress.
+- [x] Decode the iPhone device-tree `/product` metadata for real iOS userland.
+
+`latest` means latest available **for iPhone X**, the kernel/userland baseline.
+It does not mean the newest iOS for newer iPhones. Newer hardware generations
+require separate compatibility work, including ARM64e/PAC and kernel ABI.
+
+## 4. Boot real iOS userland (current major work)
+
+- [x] Probe native UDIF/APFS reading with 7-Zip 26.04 and verify extracted
+      ARM64 launchd/dyld samples; this does not produce a bootable root.
+- [ ] Build a native Windows-capable APFS/UDIF extraction pipeline that handles
+      LZBITMAP and preserves permissions, ownership, symlinks, hardlinks/xattrs.
+- [ ] Produce an HFS+ root containing OS and both cryptexes, dyld shared-cache
+      links and required initial configuration. Existing mkiosroot.sh is Linux-only.
+- [ ] Choose a storage design for QEMU: persistent virtual block device + XNU
+      driver, or an explicitly sized RAM root. QEMU virt has no Redmi UFS.
+- [ ] Keep the root image within guest RAM limits if RAM-disk boot is used;
+      the current 4 GiB guest layout cannot simply hold a 16 GiB iOS image.
+- [ ] Start Apple's dyld and launchd; record actual crashes and missing services.
+- [ ] Bring up backboardd/SpringBoard and verify a real home screen.
+- [ ] Add keyboard/mouse/touch-event input bridging and live display output.
+- [ ] Implement orderly guest shutdown and persistent changes.
+
+Installing QEMU and downloading an IPSW do not complete these tasks. The CLI
+must report missing prerequisites honestly, never label the test PID 1 as iOS.
+
+## 5. Reliability
+
+- [ ] Prevent two concurrent downloads/runs from colliding over shared state.
+- [ ] Add configuration, disk/memory limits and useful failure messages.
+- [ ] Extend regression coverage for extraction, malformed manifests and cleanup.
+- [ ] Add a reproducible clean-Windows setup test.
+
+## 6. Single-app wrapper (after CLI works with real iOS)
+
+- [ ] Move CLI actions into reusable Python services for the wrapper.
+- [ ] Define QEMU/resource discovery relative to an installed application.
+- [ ] Bundle Python runtime, QEMU and required resources in one installer/app.
+- [ ] Keep firmware downloaded separately; do not bundle Apple's IPSW.
+- [ ] Add GUI progress, display/input, start/stop and diagnostics.
+- [ ] Test licenses, upgrades and code signing for the packaged application.

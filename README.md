@@ -3,18 +3,24 @@
 Experimental PC emulation of the XNU/iOS environment derived from `ios-sweet`.
 The initial host target is **native Windows x64 with QEMU ARM64 emulation**.
 
-The project is at **early kernel bring-up**, not an interactive iOS desktop.
+The project runs **XNU plus a minimal test PID 1** on native Windows. Apple iOS userspace and an interactive desktop are still pending.
 The source was originally built for a Redmi Note 10 Pro; hardware-specific
 drivers and historical claims about phone boot do not establish PC support.
 
 ## Start on Windows
 
 ```powershell
-python tools/qemu-sweet.py --check-env
-python tools/check-windows-qemu.py
+python emulator.py doctor
+python emulator.py download
+python emulator.py inspect
+python emulator.py extract
+python emulator.py device-tree
+python emulator.py probe-root
+python emulator.py run --test
+python emulator.py status
 ```
 
-See [Windows setup and boot commands](docs/WINDOWS.md) for dependencies,
+See [CLI commands](docs/CLI.md), [TODO list](TODO.md), and [Windows setup and boot commands](docs/WINDOWS.md) for dependencies,
 kernel provenance, generated artifacts, limitations, and next steps.
 
 The Windows runner supports automatic QEMU discovery, loopback TCP QMP,

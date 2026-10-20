@@ -1,3 +1,18 @@
+## Python CLI + firmware handoff (2026-10-20, current)
+
+- Previous local milestone commit: af2b40d. Work remains native Windows x64; no phone access, flashing, Docker or WSL.
+- Added emulator.py CLI: doctor, download, inspect, extract, device-tree, probe-root, run, status. Default run requires a prepared iOS root; run --test explicitly selects the custom test PID 1. The CLI never reports that test as Apple iOS.
+- Added tools/firmware.py: standard-library urllib streaming download, percentage/speed/ETA, progress.json for future wrapper, retries and validated HTTP Range resume, file-size/SHA256 verification before final rename. Latest catalog selection is for iPhone10,3 only.
+- Download completed from Apple: iPhone10,3,iPhone10,6_16.7.16_20H392_Restore.ipsw, 6171035648 bytes; SHA256 ece1194f7e233e9109c5790a8d23a4564a10a254e15ec5b09978a343265568fb verified. Local data/firmware/; no firmware tracked in Git.
+- BuildManifest D22AP identifies OS 087-86698-044.dmg (4730814044 B), SystemOS 087-86593-047.dmg (2743074816 B), AppOS 087-86715-047.dmg (10485760 B), DeviceTree.d22ap.im4p (33719 B). All four streamed out via Python and ZIP CRC passed; data/extracted/20H392/.
+- Installed optional lzfse==0.4.2.post1 into data/python-deps only (not global Python). ADT unwrap now supports Python lzfse, retaining external lzfse fallback. Decoded real D22AP ADT: 186084 bytes, parsed fully, /product exists; research/ipsw-x/d22ap.adt.
+- Built test-root.img via existing Clang + mkinit.py, packed --ramdisk, ran real QEMU twice. CLI run with real /product ADT: data/runs/20261020-111544-442800/. Result no_panic_observed, unknown_glyphs=0, PID 1 marker true, repeated still-alive messages, runner exit 0; full_ios_boot_verified=false. Earlier missing-md0 blocker resolved for the TEST root only.
+- Native filesystem probe: installed Windows 7-Zip 21.04 decoded UDIF but could not open APFS. Official 7-Zip 26.04 executable/DLL extracted to data/tools/7zip (no global install); it reads APFS. tools/root_probe.py / CLI probe-root reproduces OS partition decode and sample validation. os-partition.apfs=5635047424 B, NXSB verified. Extracted real Apple ARM64 Mach-O samples: sbin/launchd=541600 B (MH_EXECUTE), usr/lib/dyld=922912 B (MH_DYLINKER). Probe passed, hashes/provenance summary in data/extracted/20H392/root-probe.json. This is NOT a root disk or iOS boot.
+- Seven unittest cases pass (resume, ignored/wrong Range, truncation, corrupt checksum, wrong/empty board identities). Syntax checks pass. CLI missing-root path fails explicitly. Tests and actual QEMU PID1/APFS probes are separate evidence.
+- TODO.md is the Windows/CLI-to-bundled-app roadmap. docs/CLI.md explains commands and limits. data/ ignored (downloads, extracted Apple files, local optional tools/deps and runtime output).
+- REMAINING: complete metadata-preserving APFS extraction/HFS+ writing, root tweaks + cryptex/cache integration, and guest storage design. Current CLI rejects roots >1 GiB under the existing 4 GiB guest layout; a typical 16 GiB iOS image needs a changed RAM/storage design. No Apple dyld/launchd was executed in the guest; only samples extracted on host. No SpringBoard/GUI yet. A GUI/single-app wrapper is explicitly deferred until CLI real-iOS boot works.
+
+---
 ## Windows PC emulator handoff (2026-10-20)
 
 Current work is the Windows PC fork, not phone bring-up. No device was accessed.

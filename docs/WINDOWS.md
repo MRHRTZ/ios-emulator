@@ -1,3 +1,5 @@
+For the current Python CLI and the newer PID 1/firmware milestones, see [CLI.md](CLI.md) and [../TODO.md](../TODO.md). The commands and first-boot observations below are the earlier bring-up baseline.
+
 # Windows native setup
 
 This fork targets PC emulation. The first milestone is ARM64 XNU bring-up on

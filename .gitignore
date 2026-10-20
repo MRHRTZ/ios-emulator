@@ -8,3 +8,6 @@ shim/out/
 xnu/out/
 xnu/out-*/
 __pycache__/
+
+# Local firmware downloads, extracted Apple files and emulator runs
+data/

@@ -36,8 +36,16 @@ def im4p_payload(buf):
             'encrypted': any(t == 0x04 for t, _ in items[4:])}
     payload = items[3][1]
     if payload[:4] == b'bvx2':
-        payload = subprocess.run(['lzfse', '-decode'], input=payload,
-                                 capture_output=True, check=True).stdout
+        try:
+            import lzfse
+        except ImportError:
+            import shutil
+            if not shutil.which('lzfse'):
+                raise ValueError('LZFSE decoder missing: python -m pip install --target data/python-deps lzfse==0.4.2.post1')
+            payload = subprocess.run(['lzfse', '-decode'], input=payload,
+                                     capture_output=True, check=True).stdout
+        else:
+            payload = lzfse.decompress(payload)
     return payload, info
 
 
