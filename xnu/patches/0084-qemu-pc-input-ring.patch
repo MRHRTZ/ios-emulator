@@ -1,0 +1,92 @@
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -21,6 +21,11 @@
+ #include <IOKit/IOTimerEventSource.h>
+ #include <libkern/c++/OSArray.h>
+ #include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
++#include <machine/machine_routines.h>
++
++extern "C" void sweet_hid_key(int key, int down);
++extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ 
+ #include "IOHIDEventService.h"
+ #include "IOHIDEventServiceUserClient.h"
+@@ -366,6 +371,9 @@
+ 	virtual UInt32 getPrimaryUsage() APPLE_KEXT_OVERRIDE { return kHIDUsage_Dig_TouchScreen; }
+ 	virtual UInt32 getProductID() APPLE_KEXT_OVERRIDE { return 2; }
+ private:
++	static void pcInputFired(OSObject *owner, IOTimerEventSource *sender);
++	volatile uint32_t *fPCInput;
++	IOTimerEventSource *fPCPoll;
+ 	IOLock *fLock;
+ 	int fLogicalW, fLogicalH, fOffX, fOffY;
+ 	bool fDown[SWEET_TOUCH_FINGERS];
+@@ -445,6 +453,26 @@
+ 	gSweetTouch = this;
+ 	registerService();
+ 	IOLog("SWEET HID: touch registered\n");
++	/* A dedicated reserved page outside kernel-managed RAM, QEMU only. */
++	DTEntry pc;
++	const uintptr_t *reg = NULL;
++	unsigned int size = 0;
++	if (SecureDTLookupEntry(NULL, "/sweet-pc-input", &pc) == kSuccess &&
++	    SecureDTGetProperty(pc, "reg", (const void **)&reg, &size) == kSuccess &&
++	    size == 2 * sizeof(uintptr_t) && reg[0] == 0x9e000000 && reg[1] == 0x4000) {
++		fPCInput = (volatile uint32_t *)ml_io_map(reg[0], reg[1]);
++		if (fPCInput) {
++			for (unsigned int i = 0; i < 16; i++) { fPCInput[i] = 0; }
++			fPCPoll = IOTimerEventSource::timerEventSource(this, &SweetHIDTouch::pcInputFired);
++			if (fPCPoll && _hidWorkLoop->addEventSource(fPCPoll) == kIOReturnSuccess) {
++				fPCInput[1] = 1;
++				__asm__ volatile("dmb sy" ::: "memory");
++				fPCInput[0] = 0x4e495753; /* SWIN, protocol v1 */
++				fPCPoll->setTimeoutMS(10);
++				IOLog("SWEET PC: input ring ready at 0x9e000000, 64 events\n");
++			}
++		}
++	}
+ 	return true;
+ }
+ 
+@@ -559,3 +587,40 @@
+ 		gSweetTouch->touch(finger, down != 0, x, y);
+ 	}
+ }
++
++/* Host publishes a complete 32-byte record before advancing producer.
++ * Guest acknowledges only after dispatch, so release edges cannot be lost.
++ * Header: magic/version/producer/consumer/events/last-kind/heartbeat/reserved.
++ * Ring at +64: seq, kind(1 touch/2 key), finger-or-key, down, x, y, reserved*2.
++ */
++void
++SweetHIDTouch::pcInputFired(OSObject *owner, IOTimerEventSource *sender)
++{
++	SweetHIDTouch *self = (SweetHIDTouch *)owner;
++	volatile uint32_t *page = self->fPCInput;
++	uint32_t head = page[2], tail = page[3];
++	__asm__ volatile("dmb sy" ::: "memory");
++	if ((uint32_t)(head - tail) > 64) {
++		/* Invalid producer state: reset all contacts instead of leaving a drag held. */
++		for (int i = 0; i < 10; i++) { self->touch(i, false, 0, 0); }
++		for (int i = 0; i < 4; i++) { sweet_hid_key(i, 0); }
++		tail = head;
++	}
++	for (unsigned int count = 0; tail != head && count < 64; count++) {
++		volatile uint32_t *event = page + 16 + (tail & 63) * 8;
++		if (event[0] != tail + 1) { break; }
++		uint32_t kind = event[1], code = event[2], down = event[3];
++		if (kind == 1 && code < 10 && down <= 1 && event[4] < 1080 && event[5] < 2400) {
++			self->touch((int)code, down != 0, (int)event[4], (int)event[5]);
++		} else if (kind == 2 && code < 4 && down <= 1) {
++			sweet_hid_key((int)code, (int)down);
++		}
++		page[4]++;
++		page[5] = kind;
++		tail++;
++		__asm__ volatile("dmb sy" ::: "memory");
++		page[3] = tail;
++	}
++	page[6]++;
++	sender->setTimeoutMS(10);
++}
