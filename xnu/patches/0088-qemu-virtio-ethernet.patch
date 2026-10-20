@@ -1,22 +1,239 @@
---- a/bsd/dev/sweet_virtnet.c
+--- /dev/null
 +++ b/bsd/dev/sweet_virtnet.c
-@@ -27,6 +27,7 @@
- 
- extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
- extern ppnum_t pmap_find_phys(pmap_t, addr64_t);
+@@ -0,0 +1,233 @@
++/* Minimal modern virtio-mmio Ethernet for QEMU PCs. Coherent split rings,
++ * bounded polling, no offload features and no platform interrupt dependency. */
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <sys/kpi_mbuf.h>
++#include <sys/sockio.h>
++#include <sys/kern_event.h>
++#include <kern/locks.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <kern/clock.h>
++#include <machine/machine_routines.h>
++#include <vm/pmap.h>
++#include <vm/vm_kern.h>
++#include <pexpert/device_tree.h>
++#include <net/if.h>
++#include <net/if_types.h>
++#include <net/ethernet.h>
++#include <net/if_ether.h>
++#include <net/ether_if_module.h>
++#include <net/kpi_interface.h>
++#include <net/kpi_protocol.h>
++#include <net/if_media.h>
++#include <net/dlil.h>
++
++extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++extern ppnum_t pmap_find_phys(pmap_t, addr64_t);
 +extern void thread_terminate_self(void);
- extern void sweet_pc_network_publish(const uint8_t *);
- void sweet_virtnet_init(void);
- #define VN_N 64u
-@@ -170,7 +171,7 @@
-         thread_block(THREAD_CONTINUE_NULL);
-     }
-     dlil_post_msg(vn.ifp, KEV_DL_SUBCLASS, KEV_DL_LINK_OFF, NULL, 0, FALSE);
--    thread_terminate(current_thread());
++extern void sweet_pc_network_publish(const uint8_t *);
++void sweet_virtnet_init(void);
++#define VN_N 64u
++#define VN_BUF 2048u
++#define VN_HDR 12u /* modern header includes num_buffers, even without MRG_RXBUF */
++#define VN_RX 0x4000u
++#define VN_TX 0x24000u
++#define VN_SIZE 0x44000u
++struct vn_desc { uint64_t addr; uint32_t len; uint16_t flags, next; };
++struct vn_used { uint32_t id, len; };
++static struct {
++    vm_offset_t regs, dma;
++    uint64_t pa, rx, tx, drops;
++    uint16_t avail[2], used[2];
++    bool busy[VN_N], failed;
++    uint8_t mac[6];
++    ifnet_t ifp;
++} vn;
++static LCK_GRP_DECLARE(vn_group, "sweet_virtnet");
++static LCK_MTX_DECLARE(vn_lock, &vn_group);
++static uint32_t vr(uint32_t o) { return *(volatile uint32_t *)(vn.regs + o); }
++static void vw(uint32_t o, uint32_t v) { *(volatile uint32_t *)(vn.regs + o) = v; }
++static void barrier(void) { __builtin_arm_dmb(0xf); }
++static struct vn_desc *desc(unsigned q) { return (struct vn_desc *)(vn.dma + q * 0xc00); }
++static volatile uint16_t *avail(unsigned q) { return (volatile uint16_t *)(vn.dma + q * 0xc00 + 0x400); }
++static volatile uint16_t *used(unsigned q) { return (volatile uint16_t *)(vn.dma + q * 0xc00 + 0x800); }
++static void post(unsigned q, unsigned id) {
++    volatile uint16_t *a = avail(q);
++    a[2 + (vn.avail[q] & (VN_N - 1))] = (uint16_t)id;
++    barrier(); a[1] = ++vn.avail[q]; barrier();
++}
++static void fail(void) {
++    if (!vn.failed) { printf("SWEET VNET: invalid device queue; link stopped\n"); }
++    vn.failed = true; vw(0x70, 0x80);
++}
++static bool reap_tx(void) {
++    volatile uint16_t *u = used(1);
++    uint16_t end = u[1]; barrier();
++    if ((uint16_t)(end - vn.used[1]) > VN_N) { fail(); return false; }
++    volatile struct vn_used *items = (volatile struct vn_used *)(u + 2);
++    while (vn.used[1] != end) {
++        uint32_t id = items[vn.used[1] & (VN_N - 1)].id;
++        if (id >= VN_N || !vn.busy[id]) { fail(); return false; }
++        vn.busy[id] = false; vn.used[1]++;
++    }
++    return true;
++}
++static errno_t vn_output(ifnet_t ifp, mbuf_t m) {
++    size_t len = mbuf_pkthdr_len(m);
++    unsigned id;
++    lck_mtx_lock(&vn_lock);
++    if (vn.failed || len < ETHER_HDR_LEN || len > ETHER_MAX_LEN - ETHER_CRC_LEN || !reap_tx()) { goto drop; }
++    for (id = 0; id < VN_N && vn.busy[id]; id++) {}
++    if (id == VN_N) { goto drop; }
++    uint32_t offset = VN_TX + id * VN_BUF;
++    bzero((void *)(vn.dma + offset), VN_HDR);
++    if (mbuf_copydata(m, 0, len, (void *)(vn.dma + offset + VN_HDR))) { goto drop; }
++    desc(1)[id] = (struct vn_desc){vn.pa + offset, (uint32_t)len + VN_HDR, 0, 0};
++    vn.busy[id] = true; post(1, id); vw(0x50, 1); vn.tx++;
++    lck_mtx_unlock(&vn_lock);
++    mbuf_freem(m); ifnet_stat_increment_out(ifp, 1, len, 0); return 0;
++drop:
++    vn.drops++; lck_mtx_unlock(&vn_lock);
++    mbuf_freem(m); ifnet_stat_increment_out(ifp, 0, 0, 1); return 0;
++}
++static errno_t vn_ioctl(ifnet_t ifp, unsigned long cmd, void *data) {
++    switch (cmd) {
++    case SIOCGIFMEDIA32:
++    case SIOCGIFMEDIA64: {
++        struct ifmediareq *r = data;
++        user_addr_t list = cmd == SIOCGIFMEDIA64 ? ((struct ifmediareq64 *)r)->ifmu_ulist : CAST_USER_ADDR_T(((struct ifmediareq32 *)r)->ifmu_ulist);
++        int media = IFM_ETHER | IFM_AUTO;
++        r->ifm_current = media; r->ifm_active = IFM_ETHER | IFM_1000_T | IFM_FDX;
++        r->ifm_status = IFM_AVALID | (vn.failed ? 0 : IFM_ACTIVE); r->ifm_mask = 0;
++        int count = r->ifm_count; r->ifm_count = 1;
++        return list != USER_ADDR_NULL && count > 0 ? copyout(&media, list, sizeof(media)) : 0;
++    }
++    case SIOCSIFADDR:
++    case SIOCAIFADDR: ifnet_set_flags(ifp, IFF_UP, IFF_UP); return 0;
++    case SIOCSIFFLAGS:
++    case SIOCADDMULTI:
++    case SIOCDELMULTI: return 0;
++    default: return EOPNOTSUPP;
++    }
++}
++static void vn_detach(ifnet_t ifp __unused) {}
++static mbuf_t receive(uint32_t id, uint32_t len) {
++    if (id >= VN_N || len < VN_HDR + ETHER_HDR_LEN || len > VN_BUF) { return NULL; }
++    const uint8_t *data = (const uint8_t *)(vn.dma + VN_RX + id * VN_BUF);
++    /* No checksum/GSO offload was negotiated. num_buffers isn't used. */
++    if (data[0] || data[1] || len - VN_HDR > ETHER_MAX_LEN - ETHER_CRC_LEN) { return NULL; }
++    len -= VN_HDR;
++    mbuf_t m = NULL;
++    if (mbuf_gethdr(MBUF_DONTWAIT, MBUF_TYPE_DATA, &m) ||
++        mbuf_mclget(MBUF_DONTWAIT, MBUF_TYPE_DATA, &m) ||
++        !(mbuf_flags(m) & MBUF_EXT) || mbuf_maxlen(m) < len) {
++        if (m) { mbuf_freem(m); } return NULL;
++    }
++    memcpy(mbuf_data(m), data + VN_HDR, len);
++    mbuf_setlen(m, len); mbuf_pkthdr_setlen(m, len);
++    mbuf_pkthdr_setrcvif(m, vn.ifp); mbuf_pkthdr_setheader(m, mbuf_data(m));
++    mbuf_pkthdr_adjustlen(m, -ETHER_HDR_LEN);
++    (void)mbuf_setdata(m, (char *)mbuf_data(m) + ETHER_HDR_LEN, len - ETHER_HDR_LEN);
++    return m;
++}
++static void vn_poll(void *arg __unused, wait_result_t result __unused) {
++    unsigned ticks = 0;
++    while (!vn.failed) {
++        mbuf_t packets[VN_N]; unsigned count = 0; uint64_t bytes = 0;
++        lck_mtx_lock(&vn_lock);
++        if (!reap_tx()) { lck_mtx_unlock(&vn_lock); break; }
++        volatile uint16_t *u = used(0);
++        uint16_t end = u[1]; barrier();
++        if ((uint16_t)(end - vn.used[0]) > VN_N) { fail(); lck_mtx_unlock(&vn_lock); break; }
++        volatile struct vn_used *items = (volatile struct vn_used *)(u + 2);
++        bool returned[VN_N] = {};
++        bool requeued = false;
++        while (vn.used[0] != end) {
++            struct vn_used item = items[vn.used[0] & (VN_N - 1)];
++            if (item.id >= VN_N || returned[item.id] || item.len > VN_BUF) { fail(); break; }
++            returned[item.id] = true;
++            mbuf_t m = receive(item.id, item.len);
++            if (m) { packets[count++] = m; bytes += item.len - VN_HDR; vn.rx++; }
++            else { vn.drops++; }
++            post(0, item.id); vn.used[0]++; requeued = true;
++        }
++        if (requeued) { vw(0x50, 0); }
++        uint32_t irq = vr(0x60); if (irq) { vw(0x64, irq); }
++        lck_mtx_unlock(&vn_lock);
++        /* ARP can invoke output synchronously; never hold our mutex here. */
++        for (unsigned i = 0; i < count; i++) {
++            struct ifnet_stat_increment_param stats = {};
++            stats.packets_in = 1; stats.bytes_in = mbuf_pkthdr_len(packets[i]) + ETHER_HDR_LEN;
++            ifnet_input(vn.ifp, packets[i], &stats);
++        }
++        (void)bytes;
++        if (++ticks % 2500 == 0 && ticks <= 30000) {
++            printf("SWEET VNET: en0 rx=%llu tx=%llu dropped=%llu\n", vn.rx, vn.tx, vn.drops);
++        }
++        assert_wait_timeout((event_t)&vn, THREAD_UNINT, 2, NSEC_PER_MSEC);
++        thread_block(THREAD_CONTINUE_NULL);
++    }
++    dlil_post_msg(vn.ifp, KEV_DL_SUBCLASS, KEV_DL_LINK_OFF, NULL, 0, FALSE);
 +    thread_terminate_self();
- }
- void sweet_virtnet_init(void) {
-     DTEntry node; const uintptr_t *reg; unsigned size;
++}
++void sweet_virtnet_init(void) {
++    DTEntry node; const uintptr_t *reg; unsigned size;
++    if (SecureDTLookupEntry(NULL, "/sweet-virtio", &node) != kSuccess ||
++        SecureDTGetProperty(node, "reg", (const void **)&reg, &size) != kSuccess ||
++        size != 2 * sizeof(uintptr_t) || reg[0] != 0xa000000 || reg[1] != 0x4000) { return; }
++    vm_offset_t base = ml_io_map(reg[0], reg[1]);
++    for (unsigned offset = 0; offset < 0x4000; offset += 0x200) {
++        vn.regs = base + offset;
++        if (vr(0) == 0x74726976 && vr(4) == 2 && vr(8) == 1) { break; }
++        vn.regs = 0;
++    }
++    if (!vn.regs) { printf("SWEET VNET: no virtual network adapter\n"); return; }
++    vw(0x70, 0); if (vr(0x70)) { return; } vw(0x70, 3);
++    vw(0x14, 1); if (!(vr(0x10) & 1)) { fail(); return; }
++    vw(0x14, 0); if (!(vr(0x10) & (1u << 5))) { fail(); return; }
++    vw(0x24, 0); vw(0x20, 1u << 5); vw(0x24, 1); vw(0x20, 1);
++    vw(0x70, 11); if (!(vr(0x70) & 8)) { fail(); return; }
++    if (kmem_alloc_contig(kernel_map, &vn.dma, VN_SIZE, PAGE_MASK, 0, 0,
++        KMA_DATA | KMA_ZERO | KMA_PERMANENT, VM_KERN_MEMORY_IOKIT) != KERN_SUCCESS) { fail(); return; }
++    ppnum_t page = pmap_find_phys(kernel_pmap, (addr64_t)vn.dma);
++    if (!page) { fail(); return; } vn.pa = ptoa_64(page);
++    for (unsigned q = 0; q < 2; q++) {
++        vw(0x30, q); if (vr(0x34) < VN_N || vr(0x44)) { fail(); return; }
++        vw(0x38, VN_N); uint64_t address = vn.pa + q * 0xc00;
++        vw(0x80, (uint32_t)address); vw(0x84, (uint32_t)(address >> 32)); address += 0x400;
++        vw(0x90, (uint32_t)address); vw(0x94, (uint32_t)(address >> 32)); address += 0x400;
++        vw(0xa0, (uint32_t)address); vw(0xa4, (uint32_t)(address >> 32));
++        avail(q)[0] = 1; barrier(); vw(0x44, 1);
++    }
++    for (unsigned i = 0; i < VN_N; i++) {
++        desc(0)[i] = (struct vn_desc){vn.pa + VN_RX + i * VN_BUF, VN_BUF, 2, 0}; post(0, i);
++    }
++    for (unsigned i = 0; i < 6; i++) { vn.mac[i] = *(volatile uint8_t *)(vn.regs + 0x100 + i); }
++    struct ifnet_init_eparams init = {};
++    init.ver = IFNET_INIT_CURRENT_VERSION; init.len = sizeof(init); init.flags = IFNET_INIT_LEGACY;
++    init.uniqueid = "sweet-qemu-ethernet"; init.uniqueid_len = sizeof("sweet-qemu-ethernet") - 1;
++    init.name = "en"; init.unit = 0; init.family = IFNET_FAMILY_ETHERNET; init.type = IFT_ETHER;
++    init.output = vn_output; init.demux = ether_demux; init.add_proto = ether_add_proto;
++    init.del_proto = ether_del_proto; init.check_multi = ether_check_multi;
++    init.framer_extended = ether_frameout_extended; init.ioctl = vn_ioctl; init.detach = vn_detach;
++    init.broadcast_addr = etherbroadcastaddr; init.broadcast_len = ETHER_ADDR_LEN;
++    if (ifnet_allocate_extended(&init, &vn.ifp)) { fail(); return; }
++    ifnet_set_addrlen(vn.ifp, 6); ifnet_set_hdrlen(vn.ifp, ETHER_HDR_LEN);
++    ifnet_set_mtu(vn.ifp, ETHERMTU); ifnet_set_baudrate(vn.ifp, 1000000000);
++    ifnet_set_flags(vn.ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST, 0xffff);
++    if (ifnet_attach(vn.ifp, NULL)) { ifnet_release(vn.ifp); vn.ifp = NULL; fail(); return; }
++    ifnet_set_lladdr(vn.ifp, vn.mac, 6); (void)proto_plumb(PF_INET, vn.ifp);
++    ifnet_set_flags(vn.ifp, IFF_UP | IFF_RUNNING, IFF_UP | IFF_RUNNING);
++    barrier(); vw(0x70, 15); vw(0x50, 0);
++    thread_t thread;
++    if (kernel_thread_start(vn_poll, NULL, &thread) != KERN_SUCCESS) { fail(); return; }
++    thread_deallocate(thread);
++    sweet_pc_network_publish(vn.mac);
++    dlil_post_msg(vn.ifp, KEV_DL_SUBCLASS, KEV_DL_LINK_ON, NULL, 0, FALSE);
++    printf("SWEET VNET: en0 ready MAC %02x:%02x:%02x:%02x:%02x:%02x (modern virtio, NAT)\n",
++        vn.mac[0],vn.mac[1],vn.mac[2],vn.mac[3],vn.mac[4],vn.mac[5]);
++}
++#endif
 --- a/bsd/conf/files
 +++ b/bsd/conf/files
 @@ -106,6 +106,7 @@
