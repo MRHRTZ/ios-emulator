@@ -363,3 +363,46 @@ class StartupTimerTests(unittest.TestCase):
                 window.check_startup()
             self.assertEqual(key.call_count,2)
         window.worker=None;window.close()
+
+
+class OrderlyShutdownTests(unittest.TestCase):
+    def test_request_is_capability_gated_and_does_not_quit_qemu(self):
+        from unittest.mock import Mock
+        s=PcSession('.');s.input_ready=True;s.qtest=MemoryChannel();s.qmp=Mock()
+        s.header=[INPUT_MAGIC,1,0,0,0,0,0,3]
+        with self.assertRaisesRegex(ValueError,'0094'):s.request_shutdown()
+        s.header[7]=7
+        s.request_shutdown()
+        self.assertTrue(s.shutdown_requested)
+        self.assertEqual(s.qtest.events[-1][1],(1,4,1,0,0,0,0,0))
+        s.qmp.call.assert_not_called()
+
+    def test_zero_exit_needs_requested_platform_halt_without_panic(self):
+        from pathlib import Path
+        from types import SimpleNamespace
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            s=PcSession(folder);s.out=Path(folder);s.process=SimpleNamespace(poll=lambda:0,returncode=0)
+            log=s.out/'serial.txt'
+            log.write_text('SWEET PC: platform halt reached\n')
+            with self.assertRaises(RuntimeError):s.poll()
+            s.serial_position=0;s.serial_tail='';s.shutdown_requested=True
+            self.assertIn('platform halt',s.poll());self.assertEqual(s.stage,'shutdown')
+            s.serial_position=0;s.serial_tail=''
+            log.write_text('panic(cpu 0 caller...)\nSWEET PC: platform halt reached\n')
+            with self.assertRaises(RuntimeError):s.poll()
+
+    def test_worker_waits_for_guest_shutdown_without_exporting_more_frames(self):
+        from emulator_gui import Worker
+        from unittest.mock import Mock
+        from types import SimpleNamespace
+        from pathlib import Path
+        w=Worker({'memory_mib':2048,'cpu_count':2,'fps':30})
+        session=SimpleNamespace(start=lambda:None,out=Path('.'),stage='display',input_ready=True,
+            request_shutdown=Mock(),stop=Mock(),frame=Mock(side_effect=AssertionError('Export during shutdown')))
+        def poll():session.stage='shutdown';return 'SWEET PC: platform halt reached'
+        session.poll=poll
+        w.submit('shutdown');errors=[];w.finished.connect(errors.append)
+        with patch('emulator_gui.PcSession',return_value=session):w.run()
+        session.request_shutdown.assert_called_once();session.frame.assert_not_called()
+        session.stop.assert_called_once();self.assertEqual(errors,[''])

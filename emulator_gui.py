@@ -104,6 +104,8 @@ class Worker(QObject):
     def run(self):
         error = ''
         paused = False
+        shutting_down = False
+        shutdown_deadline = None
         scheduled = []
         order = 0
         next_frame = next_poll = 0
@@ -120,21 +122,27 @@ class Worker(QObject):
                         command = self.commands.get_nowait()
                     except queue.Empty:
                         break
-                    if command[0] == 'pause':
+                    if command[0] == 'shutdown' and not paused and not shutting_down:
+                        scheduled.clear()
+                        self.session.request_shutdown()
+                        shutting_down = True
+                        shutdown_deadline = now + 120
+                        frames, fps = 0, 0.
+                    elif command[0] == 'pause' and not shutting_down:
                         scheduled.clear()
                         paused = bool(command[1])
                         warning = self.session.pause(paused)
                         if warning: self.log.emit(warning)
                         frames, fps, measured = 0, 0., time.monotonic()
                         next_frame = 0
-                    elif command[0] == 'input' and not paused and self.session.input_ready:
+                    elif command[0] == 'input' and not paused and not shutting_down and self.session.input_ready:
                         order += 1
                         heapq.heappush(scheduled, (now, order, command[1:]))
-                    elif command[0] == 'text' and not paused and self.session.input_ready:
+                    elif command[0] == 'text' and not paused and not shutting_down and self.session.input_ready:
                         for usage, down in ascii_key_strokes(command[1]):
                             order += 1
                             heapq.heappush(scheduled, (now, order, (3, usage, down, 0, 0)))
-                    elif command[0] == 'gesture' and not paused and self.session.input_ready:
+                    elif command[0] == 'gesture' and not paused and not shutting_down and self.session.input_ready:
                         _, x0, y0, x1, y1, duration, hold = command
                         for step in range(2):
                             x, y = round(x0 + (x1 - x0) * step), round(y0 + (y1 - y0) * step)
@@ -142,7 +150,7 @@ class Worker(QObject):
                             heapq.heappush(scheduled, (now + duration * step, order, (1, 0, True, x, y)))
                         order += 1
                         heapq.heappush(scheduled, (now + duration + hold + .03, order, (1, 0, False, x1, y1)))
-                while scheduled and scheduled[0][0] <= time.monotonic() and not paused:
+                while scheduled and scheduled[0][0] <= time.monotonic() and not paused and not shutting_down:
                     due, sequence, event = scheduled[0]
                     if not self.session.input(*event):
                         break
@@ -151,9 +159,15 @@ class Worker(QObject):
                     delta = self.session.poll()
                     if delta:
                         self.log.emit(delta)
-                    self.state.emit('paused' if paused else self.session.stage, self.session.input_ready, fps)
+                    if self.session.stage == 'shutdown':
+                        self.log.emit('iOS completed orderly shutdown; QEMU exited.')
+                        break
+                    stage = 'shutting-down' if shutting_down else ('paused' if paused else self.session.stage)
+                    if shutting_down and now >= shutdown_deadline:
+                        stage = 'shutdown-stalled'
+                    self.state.emit(stage, self.session.input_ready and not shutting_down, fps)
                     next_poll = now + .25
-                if not paused and now >= next_frame and not self.frame_pending.is_set():
+                if not paused and not shutting_down and now >= next_frame and not self.frame_pending.is_set():
                     data = self.session.frame()
                     if data is not None:
                         image = QImage(data, FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4, QImage.Format.Format_RGB32).copy()
@@ -401,6 +415,7 @@ class Window(QMainWindow):
         self.setMinimumSize(540, 600)
         self.resize(650, min(980, QApplication.primaryScreen().availableGeometry().height() - 60))
         self.worker = None
+        self.shutting_down = False
         self.startup_timer=QTimer(self)
         self.startup_timer.setInterval(1000)
         self.startup_timer.timeout.connect(self.check_startup)
@@ -495,10 +510,12 @@ class Window(QMainWindow):
 
         self.start_action = self.action('Start', self.start, None, 'Ctrl+Return')
         self.pause_action = self.action('Pause', self.pause, None, 'Ctrl+P')
-        self.stop_action = self.action('Stop', self.stop, None)
+        self.shutdown_action = self.action('Shut Down iOS', self.shutdown, None)
+        self.shutdown_action.setToolTip('Stop guest processes, sync and unmount before power off (kernel0094+).')
+        self.stop_action = self.action('Force Stop', self.stop, None)
         self.restart_action = self.action('Restart', self.restart, None, 'F5')
         menu = self.menuBar().addMenu('&Emulator')
-        for a in (self.start_action, self.pause_action, self.stop_action, self.restart_action):
+        for a in (self.start_action, self.pause_action, self.shutdown_action, self.stop_action, self.restart_action):
             menu.addAction(a)
         menu.addSeparator()
         self.settings_action=menu.addAction('Settings...', self.preferences)
@@ -667,6 +684,7 @@ class Window(QMainWindow):
         if self.worker:
             return
         self.paused = False
+        self.shutting_down = False
         self.stopping = False
         self.auto_home_pending = True
         self.startup_display_at = None
@@ -695,7 +713,7 @@ class Window(QMainWindow):
     def check_startup(self):
         # Run from a timer too: unchanged-frame suppression must not suppress
         # startup wake attempts when the framebuffer stays black.
-        if not self.worker or self.stopping or self.screen.image.isNull(): return
+        if not self.worker or self.stopping or self.shutting_down or self.screen.image.isNull(): return
         image=self.screen.image
         if self.auto_home_pending and self.stage=='display' and not self.paused:
             now=time.monotonic()
@@ -741,7 +759,9 @@ class Window(QMainWindow):
         self.start_action.setEnabled(not active)
         self.pause_action.setEnabled(active and stage in ('display','paused'))
         self.stop_action.setEnabled(active)
-        self.restart_action.setEnabled(active)
+        self.restart_action.setEnabled(active and stage not in ('shutting-down','shutdown-stalled'))
+        shutdown_ready = bool(self.worker and self.worker.session and self.worker.session.header and self.worker.session.header[7]&4)
+        self.shutdown_action.setEnabled(stage=='display' and shutdown_ready)
         self.settings_button.setEnabled(not active)
         self.settings_action.setEnabled(not active)
         self.screen.enabled_input = active and input_ready and stage == 'display'
@@ -761,10 +781,12 @@ class Window(QMainWindow):
             'springboard': 'Launching SpringBoard...',
             'display': 'Preparing iOS display...' if self.auto_home_pending else 'iOS running',
             'paused': 'Paused',
+            'shutting-down': 'Shutting down iOS...',
+            'shutdown-stalled': 'Shutdown is taking longer; Force Stop is available.',
             'panic': 'iOS stopped due to a kernel panic. See logs.'
         }
         self.show_status_message(messages.get(stage, stage))
-        self.progress.setVisible(stage in ('starting', 'booting', 'services', 'springboard') or (stage=='display' and self.auto_home_pending))
+        self.progress.setVisible(stage in ('starting', 'booting', 'services', 'springboard', 'shutting-down') or (stage=='display' and self.auto_home_pending))
         self.fps_label.setText(f'{fps:.1f} fps' if active else '')
 
     def pause(self):
@@ -774,6 +796,13 @@ class Window(QMainWindow):
             self.paused = not self.paused
             self.worker.submit('pause', self.paused)
             self.pause_action.setText('Resume' if self.paused else 'Pause')
+
+    def shutdown(self):
+        if self.worker and self.screen.enabled_input:
+            self.screen.release_touch();self.screen.release_keys()
+            self.shutting_down = True
+            self.worker.submit('shutdown')
+            self.set_state('shutting-down',False,0)
 
     def stop(self):
         if self.worker:
@@ -793,12 +822,16 @@ class Window(QMainWindow):
             self.stop()
 
     def finished(self, error):
+        shutdown_completed = bool(self.worker and self.worker.session and self.worker.session.stage=='shutdown')
         self.worker = None
+        self.shutting_down = False
         self.stopping = False
         self.screen.image=QImage();self.screen.message='';self.screen.update()
         self.paused = False
         self.pause_action.setText('Pause')
         self.set_state('stopped', False, 0)
+        if shutdown_completed and not error:
+            self.show_status_message('iOS shut down',6000)
         if error:
             self.append_log(error)
             self.log_dock.show()

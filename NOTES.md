@@ -1,3 +1,11 @@
+## Orderly shutdown implementation — 2026-10-21
+
+- Kernel0093 CI39504669301 SUCCESS. Artifact xnu/out-0093 SHA2565e3c19198b313d4bdae560a83f5ea1a8baceadad67d7715c1ab36db5741b65f2 matches SHA256SUMS. Not yet runtime-tested; default0091 preserved.
+- Kernel0094 adds PC-only shutdown capability bit2 and kind4/code1 command. Dedicated kernel thread invokes reboot_kernel(RB_HALT): normal process shutdown, sync and VFS unmount, then SweetPlatformExpert::haltRestart emits platform-halt marker and PSCI SYSTEM_OFF (HVC) on QEMU ADT only. Phone fallback unchanged. Both changed C++ TUs compile locally. Runtime may expose unsupported subsystem shutdown; do not mark TODO complete until actual halt and disk check verified.
+- Host Shut Down iOS menu is gated by0094 capability and enabled only for running display. Releases input, submits command, stops frame exports, follows guest until exit0 plus platform-halt marker without panic. Force Stop remains explicit fallback; after120sec UI says shutdown taking longer without silently cutting power. Tests distinguish expected halt from crash/ordinary exit.48 host tests PASS. Pending CI/runtime.
+- Current0092 GUI15988/window1772382/QEMU13524 remains running, Home visually reached after manual Power/Home; Power showed Siri onboarding, navigated away with Home without changing Siri/privacy settings. Metadata skip counter>7487, guest render frames511 at05:05. Actual Home drag/Settings tests still pending in this run. Search opened for paste verification; read fresh screenshot before typing.
+
+---
 ## Startup transport interaction — 2026-10-21
 
 - Kernel0092 current GUI session15988/window1772382, QEMU13524 run20261021-050001-370700,4CPU/4096MiB/target60. At metadata frames25/sequence50, host skipped4090 unchanged exports. Transport works; do not confuse static0 FPS with a stalled guest. Manual Home was needed to wake current startup; auto-unlock not verified.

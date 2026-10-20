@@ -98,7 +98,7 @@ def map_pointer(px, py, left, top, width, height, rotation=0, clamp=False):
 class PcSession:
     def __init__(self, root, memory_mib=2048, kernel=None, overlay=None, cpu_count=1):
         self.root = Path(root)
-        self.kernel = Path(kernel) if kernel else self.root / 'xnu/out/kernel.development.sweet'
+        self.kernel = Path(kernel).resolve() if kernel else self.root / 'xnu/out/kernel.development.sweet'
         self.memory_mib = memory_mib
         self.cpu_count = cpu_count
         self.overlay = Path(overlay) if overlay else self.root / 'data/gui/ios-session.qcow2'
@@ -119,6 +119,7 @@ class PcSession:
         self.frame_skips = 0
         self.guest_calendar_unix = None
         self.clock_resume_warning = None
+        self.shutdown_requested = False
 
     def start(self):
         import adt
@@ -227,13 +228,7 @@ class PcSession:
             raise TimeoutError('Could not connect to QEMU control channels.')
         self.stage = 'booting'
 
-    def poll(self):
-        if self.process.poll() is not None:
-            raise RuntimeError('QEMU process stopped. Check session logs for details.')
-        self.header = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
-        self.input_ready = self.header[0] == INPUT_MAGIC and self.header[1] == 1
-        if self.input_ready and self.header[7] & 2:
-            self.guest_calendar_unix = struct.unpack('<I', self.qtest.read(INPUT_ADDRESS + 60, 4))[0]
+    def _read_serial(self):
         path = self.out/'serial.txt'
         delta = ''
         if path.exists():
@@ -242,6 +237,31 @@ class PcSession:
                 self.serial_position += len(data)
             delta = data.decode(errors='replace')
             self.serial_tail = (self.serial_tail + delta)[-200000:]
+        return delta
+
+    def poll(self):
+        delta = self._read_serial()
+        if self.process.poll() is not None:
+            if (self.shutdown_requested and self.process.returncode == 0 and
+                    'SWEET PC: platform halt reached' in self.serial_tail and
+                    'panic(cpu ' not in self.serial_tail and 'SWEET EARLY PANIC:' not in self.serial_tail):
+                self.stage = 'shutdown'
+                self.input_ready = False
+                return delta
+            raise RuntimeError('QEMU process stopped. Check session logs for details.')
+        try:
+            self.header = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
+        except (OSError, RuntimeError) as error:
+            if not self.shutdown_requested:
+                raise
+            try:
+                self.process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                raise error
+            return delta + self.poll()
+        self.input_ready = self.header[0] == INPUT_MAGIC and self.header[1] == 1
+        if self.input_ready and self.header[7] & 2 and not self.shutdown_requested:
+            self.guest_calendar_unix = struct.unpack('<I', self.qtest.read(INPUT_ADDRESS + 60, 4))[0]
         if 'panic(cpu ' in self.serial_tail or 'SWEET EARLY PANIC:' in self.serial_tail:
             self.stage = 'panic'
         elif any(marker in self.serial_tail for marker in ('SWEET FB: swap ', 'SWEET FB: backboardd sel 55', 'SWEET SURF: backboardd create id 2', 'SWEET SURF: backboardd create id')):
@@ -260,7 +280,7 @@ class PcSession:
                       'video_metadata': self.video_metadata, 'unchanged_frame_skips': self.frame_skips,
                       'guest_calendar_unix': self.guest_calendar_unix,
                       'calendar_lag_seconds': round(time.time()-self.guest_calendar_unix, 2) if self.guest_calendar_unix else None,
-                      'clock_resume_warning': self.clock_resume_warning}
+                      'clock_resume_warning': self.clock_resume_warning, 'shutdown_requested': self.shutdown_requested}
             path = self.out/'live.json'
             temporary = path.with_suffix('.tmp')
             try:
@@ -340,19 +360,22 @@ class PcSession:
             self.held_inputs.pop((kind, code), None)
         return True
 
+    def release_inputs(self):
+        # Release before freezing the guest, and wait until HID acknowledges.
+        deadline = time.monotonic() + 1
+        while True:
+            for (kind, code), (x, y) in list(self.held_inputs.items()):
+                self.input(kind, code, False, x, y)
+            header = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
+            if not self.held_inputs and header[2] == header[3]:
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError('iOS did not release its input controls before continuing.')
+            time.sleep(.01)
+
     def pause(self, paused):
         if paused and self.input_ready:
-            # Release before freezing the guest, and wait until HID acknowledges.
-            deadline = time.monotonic() + 1
-            while True:
-                for (kind, code), (x, y) in list(self.held_inputs.items()):
-                    self.input(kind, code, False, x, y)
-                header = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
-                if not self.held_inputs and header[2] == header[3]:
-                    break
-                if time.monotonic() >= deadline:
-                    raise RuntimeError('iOS did not release its input controls before pausing.')
-                time.sleep(.01)
+            self.release_inputs()
         self.qmp.call('stop' if paused else 'cont')
         if not paused and self.input_ready and self.header and self.header[7] & 2:
             self.clock_resume_warning = None
@@ -362,14 +385,19 @@ class PcSession:
 
     def resume_calendar(self):
         """Protocol-v1 capability bit1: system event4 refreshes calendar from RTC."""
+        return self._system_event(0, wait=True)
+
+    def _system_event(self, code, wait):
         header = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
         head, tail = header[2:4]
         if ((head-tail) & 0xffffffff) >= INPUT_SLOTS:
             return False
         sequence = (head+1) & 0xffffffff
-        record = struct.pack('<8I', sequence, 4, 0, 0, 0, 0, 0, 0)
+        record = struct.pack('<8I', sequence, 4, code, 0, 0, 0, 0, 0)
         self.qtest.write(INPUT_ADDRESS + 64 + (head & 63)*32, record)
         self.qtest.write32(INPUT_ADDRESS + 8, sequence)
+        if not wait:
+            return True
         deadline = time.monotonic()+3
         while time.monotonic()<deadline:
             consumed = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))[3]
@@ -377,6 +405,15 @@ class PcSession:
                 return True
             time.sleep(.01)
         return False
+
+    def request_shutdown(self):
+        if not self.input_ready or not self.header or not self.header[7] & 4:
+            raise ValueError('Orderly shutdown requires kernel0094 or newer.')
+        self.release_inputs()
+        self.shutdown_requested = True
+        if not self._system_event(1, wait=False):
+            self.shutdown_requested = False
+            raise RuntimeError('Guest input ring is full; orderly shutdown was not submitted.')
 
     def stop(self):
         if self.process is not None and self.process.poll() is None:

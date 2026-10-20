@@ -1,0 +1,96 @@
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -24,6 +24,8 @@
+ #include <pexpert/device_tree.h>
+ #include <machine/machine_routines.h>
+ #include <kern/clock.h>
++#include <kern/thread.h>
++#include <sys/reboot.h>
+ 
+ extern "C" void sweet_hid_key(int key, int down);
+ extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+@@ -390,6 +392,14 @@
+ };
+ OSDefineMetaClassAndStructors(SweetHIDKeyboard, IOHIDEventService);
+ static SweetHIDKeyboard *gSweetKeyboard;
++static uint32_t gSweetPCShutdownStarted;
++static void sweet_pc_shutdown_thread(void *, wait_result_t)
++{
++    IOLog("SWEET PC: orderly shutdown starting\n");
++    int error = reboot_kernel(RB_HALT, NULL);
++    IOLog("SWEET PC: orderly shutdown returned error %d\n", error);
++    thread_terminate(current_thread());
++}
+ extern "C" int sweet_pc_keyboard_supported(void) { return 1; }
+ 
+ class SweetHIDTouch : public IOHIDEventService {
+@@ -500,7 +510,7 @@
+                 if (gSweetKeyboard && gSweetKeyboard->init() && gSweetKeyboard->attach(provider)) {
+                     if (!gSweetKeyboard->start(provider)) { gSweetKeyboard->detach(provider); OSSafeReleaseNULL(gSweetKeyboard); }
+                 } else { OSSafeReleaseNULL(gSweetKeyboard); }
+-                fPCInput[7] = (gSweetKeyboard ? 1 : 0) | 2; /* calendar resume supported */
++                fPCInput[7] = (gSweetKeyboard ? 1 : 0) | 2 | 4; /* calendar resume, orderly shutdown */
+                 fPCInput[1] = 1;
+ 				__asm__ volatile("dmb sy" ::: "memory");
+ 				fPCInput[0] = 0x4e495753; /* SWIN, protocol v1 */
+@@ -659,6 +669,17 @@
+              * notify userspace. This ring exists only on the PC ADT path. */
+             clock_wakeup_calendar();
+             IOLog("SWEET PC: calendar resynchronized after host resume\n");
++        } else if (kind == 4 && code == 1 && down == 0) {
++            if (!__atomic_exchange_n(&gSweetPCShutdownStarted, 1, __ATOMIC_ACQ_REL)) {
++                thread_t thread;
++                kern_return_t result = kernel_thread_start(sweet_pc_shutdown_thread, NULL, &thread);
++                if (result == KERN_SUCCESS) {
++                    thread_deallocate(thread);
++                } else {
++                    __atomic_store_n(&gSweetPCShutdownStarted, 0, __ATOMIC_RELEASE);
++                    IOLog("SWEET PC: cannot create shutdown thread: %d\n", result);
++                }
++            }
+ 		}
+ 		page[4]++;
+ 		page[5] = kind;
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -9,12 +9,15 @@
+ #include <IOKit/IOPlatformExpert.h>
+ #include <IOKit/IODeviceTreeSupport.h>
+ #include <IOKit/IOLib.h>
++#include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
+ 
+ class SweetPlatformExpert : public IODTPlatformExpert {
+ 	OSDeclareDefaultStructors(SweetPlatformExpert);
+ 
+ public:
+ 	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
++	int haltRestart(unsigned int type) APPLE_KEXT_OVERRIDE;
+ 	void processTopLevel(IORegistryEntry *root) APPLE_KEXT_OVERRIDE;
+ 	const char *deleteList(void) APPLE_KEXT_OVERRIDE;
+ 	const char *excludeList(void) APPLE_KEXT_OVERRIDE;
+@@ -32,6 +35,24 @@
+ 	registerService();
+ 	IOLog("SWEET: platform expert registered\n");
+ 	return true;
++}
++
++/* The physical phone retains its previous platform behavior. QEMU exposes
++ * PSCI through HVC; SYSTEM_OFF is reached only after BSD shutdown/unmount. */
++int
++SweetPlatformExpert::haltRestart(unsigned int type)
++{
++    DTEntry pc;
++    if (type == kPEHaltCPU && SecureDTLookupEntry(NULL, "/sweet-pc-input", &pc) == kSuccess) {
++        IOLog("SWEET PC: platform halt reached\n");
++        register uint64_t x0 __asm__("x0") = 0x84000008ULL; /* PSCI SYSTEM_OFF */
++        __asm__ volatile("hvc #0" : "+r"(x0) : :
++            "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10",
++            "x11", "x12", "x13", "x14", "x15", "x16", "x17", "cc", "memory");
++        IOLog("SWEET PC: PSCI SYSTEM_OFF returned %d\n", (int32_t)x0);
++        return -1;
++    }
++    return IODTPlatformExpert::haltRestart(type);
+ }
+ 
+ const char *
