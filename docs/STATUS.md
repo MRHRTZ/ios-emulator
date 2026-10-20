@@ -29,8 +29,8 @@ compatibility score or release-readiness measure. Deferred work remains counted.
 - Host UTC RTC, virtio disk/persistent-overlay lock, IPv6 DNS/TLS/HTTP receipt,
   and kernel0090 IPv4 DHCP/default route (10.0.2.15 via10.0.2.2).
 - Pinned requirements installed in a local Python3.12 venv; pip check and50 host
-  tests pass. Clean Windows CI39505871568 passed48 tests at7f4e079; newer source
-  includes additional resource-limit and unlock-retry tests.
+  tests pass. Clean Windows CI39508175791 passed50 tests at75d7c08, including
+  resource-limit and unlock-retry regressions.
 - [Actual Windows/Home screenshot and its limitations](SCREENSHOTS.md).
 
 ## In progress
@@ -38,6 +38,8 @@ compatibility score or release-readiness measure. Deferred work remains counted.
 - Bounded automatic-unlock retry on four-core fresh boot. The first0094 run
   still needed manual Home; the new retry source needs runtime validation.
 - Default wallpaper through the actual guest PosterBoard path; no host overlay.
+  A backed-up static-image default-asset trial is installed locally; its current
+  fresh boot has not yet been visually verified.
 - Motion latency under different capture targets and host/guest workload.
 
 ## Still missing or deferred
