@@ -1,3 +1,11 @@
+## Live paste verified — 2026-10-21 05:09 WIB
+
+- Current kernel0092 run20261021-050001-370700, GUI15988/window1772382/QEMU13524: sky.type_text Ab9! visibly produced EXACT Ab9! in Spotlight. Subsequent physical E appended lowercase e -> Ab9!e, demonstrating Shift/Ctrl modifiers were not left active by clipboard paste. Header went16->32 for paste and34 after physical E. No Safari page opened/tested.
+- Frame metadata at05:09:42:1458 guest presents,13968 unchanged/inflight host skips, last copy3414us/export28.07ms; target60. These are cumulative counts, not controlled before/after motion performance measurements. Static screens can honestly show0 host export FPS. Captures stay local/ignored.
+- Windows host CI39505871568 SUCCESS for7f4e079 (48 tests). Kernel0094 CI39505871637 still building. Kernel0093 downloaded/verified5e3c19198b313d4bdae560a83f5ea1a8baceadad67d7715c1ab36db5741b65f2; ready for2CPU/clock/auto-start test with latest GUI source.
+- Current guest paused using Ctrl+P at05:09:42. Check0 FPS then close GUI and verify process exit before next run. Updated startup timer/dense-console fix is on disk but current GUI predates it; reload required.
+
+---
 ## Orderly shutdown implementation — 2026-10-21
 
 - Kernel0093 CI39504669301 SUCCESS. Artifact xnu/out-0093 SHA2565e3c19198b313d4bdae560a83f5ea1a8baceadad67d7715c1ab36db5741b65f2 matches SHA256SUMS. Not yet runtime-tested; default0091 preserved.
