@@ -1,3 +1,12 @@
+## Safari white-page investigation (2026-10-20, newest)
+
+- Branch dev/window-native; completed kernel0090 BPF/DHCP patch sourcea4d34ec pushed, CI39400179151 SUCCESS. Kernel SHA39d253706f64924a904d42480d0bc8f38c8d073252975199df48f91920093b48 verified and installed default;0089 fallback preserved. Runtime0090 still pending.
+- Previous GUI run20261020-161646-660500 kernel0089: FOUR-core real Home observed, hardware Home/F6 unlock confirmed, Safari opens and virtual keyboard enters example.com correctly. Current-day RTC. IPv6 DNS, TCP/TLS remote traffic confirmed in local capture; example.com HTTP200, gzip decoded HTML577B contains Example Domain. Safari webpage remained WHITE despite actual HTML receipt. Search recommendations work. Do not report rendered browser success or IPv4 DHCP success.
+- Source go_home now emits HID Menu/Home key3 instead of unreliable swipe. Requires GUI reload; F6 proved same key in previous running GUI.
+- GUI closed via AltF4 before offline overlay edit. Testing ONLY verified WebKitDebugAcceleratedDrawingEnabled=false in mobile Safari prefs and app container prefs, with before-software-render backup containing complete prior preferences/existence. No binary edits/base image changes. Official WebKit commit4f8c032ce38089c7eddd8286a064e041c7b98b52 (2022-12-31) preference definitions and WebPreferencesCocoa.mm confirm debug NSUserDefaults prefix; WKPreferences.mm prefixWebKitDebug. This is a render EXPERIMENT, not yet a fix.
+- Offline helper scratch work/configure_guest_render.py, data/guest-render, same GUI overlay lock, serial validation/clean fsck before/after. Check marker and helper exit before restarting GUI. No native extraction/pipeline work. Capture stays local/ignored, no Apple artifacts uploaded, venv/ untouched. Next: boot0090/retest actual sidebarHome, Safari drawing and DHCP; update this checkpoint with observed outcome.
+
+---
 ## Active Windows continuation (2026-10-20 16:18 WIB)
 
 - Branch dev/window-native; release window-native reserved, main untouched. Last committed source a5b202a. Pending host changes include shared tools/pc_platform.py finite5sec lock settings, F6 hardware Home compatibility shortcut, opt-in local network capture, runtime hash/boot-arg metadata;25 tests PASS.

@@ -18,7 +18,7 @@ the iOS on-screen keyboard. Host text typing is not bridged yet.
 
 | Control | Shortcut |
 | --- | --- |
-| Home / unlock swipe | F1 or Esc |
+| Home / unlock | F1 or Esc |
 | Recent apps | Sidebar Apps button |
 | Power / lock | F2 |
 | Hardware Home compatibility key | F6 |
@@ -53,7 +53,10 @@ No inbound forwarding or TAP adapter is configured.
 Real home/search/on-screen keyboard/Home input were visually verified with
 one CPU. Kernel smoke tests pass with 2/4 CPUs; real Apple launchd and
 SpringBoard execution were observed with four CPUs and current-day timestamps.
-Four-core home-screen responsiveness and internet remain under validation.
+A four-core home screen and hardware Home/unlock were subsequently verified.
+IPv6 DNS and remote TLS data are verified; Safari rendering and IPv4 DHCP
+remain under validation. All three multicore spinlock policies use a finite
+five-second timeout to accommodate TCG/frame-export scheduling.
 
 For local network diagnosis only, set `IOS_EMULATOR_CAPTURE_NETWORK=1` before
 starting the GUI to save guest packets to its run directory as `network.pcap`.

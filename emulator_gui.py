@@ -572,7 +572,9 @@ class Window(QMainWindow):
 
     def go_home(self):
         if self.worker and self.screen.enabled_input:
-            self.worker.submit('gesture', 540, 2390, 540, 1450, .35, 0.)
+            # iOS accepts the HID Menu/Home key on the D22AP guest, including
+            # unlock. A synthetic swipe can leave the lock screen open.
+            self.key_click(3)
 
     def app_switcher(self):
         if self.worker and self.screen.enabled_input:

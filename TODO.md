@@ -57,7 +57,14 @@ require separate compatibility work, including ARM64e/PAC and kernel ABI.
 - [x] Supply QEMU PL031 host UTC clock; Apple logs show current date.
 - [x] Adapt Aff0 MPIDRs / HVC PSCI; 2/4 CPU test userspace and SGI verified.
 - [ ] Validate 2/4-core GUI responsiveness and clock across Pause/Resume.
-- [ ] Finish virtio Ethernet, configd/DHCP, route, DNS and Safari verification.
+- [x] Verify IPv6 DNS, remote TLS and actual HTTP 200/HTML arrival in Safari.
+- [ ] Verify IPv4 DHCP and route with BPF-enabled kernel0090.
+- [ ] Fix Safari/WebKit blank content despite successful HTML receipt.
+- [ ] Integrate a guest-compatible GPU/graphics transport and Windows renderer.
+- [ ] Add graphics settings: Auto, Software, Vulkan, OpenGL. Expose accelerated
+      choices only once an actual backend works; host presentation alone does
+      not supply the iOS Metal/IOAccelerator driver path.
+- [ ] Validate rendered webpages and graphics with each supported backend.
 
 Installing QEMU and downloading an IPSW do not complete these tasks. The CLI
 must report missing prerequisites honestly, never label the test PID 1 as iOS.
