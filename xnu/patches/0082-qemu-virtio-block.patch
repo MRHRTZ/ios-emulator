@@ -1,0 +1,300 @@
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -105,6 +105,7 @@
+ 
+ bsd/dev/memdev.c			standard
+ bsd/dev/sweet_ufs.c			standard
++bsd/dev/sweet_virtio.c			standard
+ bsd/dev/sweet_sample.c			standard
+ bsd/dev/sweet_keys.c			standard
+ bsd/dev/sweet_touch.c			standard
+--- a/iokit/bsddev/IOKitBSDInit.cpp
++++ b/iokit/bsddev/IOKitBSDInit.cpp
+@@ -770,6 +770,16 @@
+ //
+ //	SWEET: root on a GPT partition of the internal UFS (bsd/dev/sweet_ufs.c)
+ //
++	if (strcmp(rdBootVar, "vioroot0") == 0) {
++		extern int sweet_virtio_rootdev(dev_t *dev);
++		OSSafeReleaseNULL(matching);
++		int error = sweet_virtio_rootdev(root);
++		if (error) { panic("IOFindBSDRoot: virtio root unavailable: %d", error); }
++		strlcpy(rootName, rdBootVar, rootNameSize);
++		IOLog("BSD root: %s, major %d, minor %d\n", rootName, major(*root), minor(*root));
++		*oflags = 0;
++		goto iofrootx;
++	}
+ 	if (strcmp(rdBootVar, "ufsroot0") == 0) {
+ 		extern int sweet_ufs_rootdev(dev_t *dev);
+ 		OSSafeReleaseNULL(matching);
+--- /dev/null
++++ b/bsd/dev/sweet_virtio.c
+@@ -0,0 +1,268 @@
++/* QEMU virt, modern virtio-mmio block root. One serialized split queue.
++ * Coherent guest RAM and polling are deliberate: no Qualcomm hardware or IRQ
++ * dependency. Disk capacity/bounds are always enforced. Writes require viorw=1.
++ */
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/buf.h>
++#include <sys/conf.h>
++#include <sys/disk.h>
++#include <sys/errno.h>
++#include <sys/proc.h>
++#include <sys/uio.h>
++#include <miscfs/devfs/devfs.h>
++#include <kern/locks.h>
++#include <kern/clock.h>
++#include <machine/machine_routines.h>
++#include <vm/pmap.h>
++#include <vm/vm_kern.h>
++#include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
++#include <libkern/libkern.h>
++
++extern ppnum_t pmap_find_phys(pmap_t, addr64_t);
++extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++
++#define VQ_N 8u
++#define DMA_AVAIL 0x100u
++#define DMA_USED 0x200u
++#define DMA_HDR 0x300u
++#define DMA_STATUS 0x310u
++#define DMA_DATA 0x4000u
++#define IO_MAX (1u << 20)
++#define DMA_SIZE (DMA_DATA + IO_MAX)
++#define F_RO (1u << 5)
++#define F_FLUSH (1u << 9)
++
++struct vio_desc { uint64_t addr; uint32_t len; uint16_t flags, next; };
++struct vio_req { uint32_t type, reserved; uint64_t sector; };
++static struct {
++    vm_offset_t regs, dma;
++    uint64_t pa, sectors;
++    uint32_t secsize, features;
++    uint16_t avail, used;
++    dev_t bdev;
++    int bmajor, cmajor;
++    bool ready, writable, failed;
++} sv;
++static LCK_GRP_DECLARE(sweet_vio_grp, "sweet_virtio");
++static LCK_MTX_DECLARE(sweet_vio_lock, &sweet_vio_grp);
++
++static uint32_t vr(uint32_t off) { return *(volatile uint32_t *)(sv.regs + off); }
++static void vw(uint32_t off, uint32_t val) { *(volatile uint32_t *)(sv.regs + off) = val; }
++static void barrier(void) { __builtin_arm_dmb(0xf); }
++
++static int
++vio_request(uint32_t type, uint64_t sector, uint32_t bytes)
++{
++    if (sv.failed) { return EIO; }
++    if (bytes > IO_MAX || (bytes & 511) || sector > sv.sectors ||
++        bytes / 512 > sv.sectors - sector) { return EINVAL; }
++    if (type == 1 && !sv.writable) { return EROFS; }
++    struct vio_desc *d = (struct vio_desc *)sv.dma;
++    struct vio_req *h = (struct vio_req *)(sv.dma + DMA_HDR);
++    volatile uint8_t *status = (volatile uint8_t *)(sv.dma + DMA_STATUS);
++    volatile uint16_t *avail = (volatile uint16_t *)(sv.dma + DMA_AVAIL);
++    volatile uint16_t *used = (volatile uint16_t *)(sv.dma + DMA_USED);
++    h->type = type; h->reserved = 0; h->sector = sector;
++    *status = 0xff;
++    d[0] = (struct vio_desc){ sv.pa + DMA_HDR, sizeof(*h), 1, 1 };
++    if (bytes) {
++        d[1] = (struct vio_desc){ sv.pa + DMA_DATA, bytes, (uint16_t)(1 | (type == 0 ? 2 : 0)), 2 };
++        d[2] = (struct vio_desc){ sv.pa + DMA_STATUS, 1, 2, 0 };
++    } else {
++        d[1] = (struct vio_desc){ sv.pa + DMA_STATUS, 1, 2, 0 };
++    }
++    avail[0] = 1;  /* VIRTQ_AVAIL_F_NO_INTERRUPT */
++    avail[2 + (sv.avail & (VQ_N - 1))] = 0;
++    barrier();
++    avail[1] = ++sv.avail;
++    barrier();
++    vw(0x50, 0);
++    uint64_t deadline;
++    nanoseconds_to_absolutetime(10ull * NSEC_PER_SEC, &deadline);
++    deadline += mach_absolute_time();
++    while (used[1] == sv.used) {
++        if (mach_absolute_time() > deadline) {
++            sv.failed = true;
++            vw(0x70, 0);
++            printf("SWEET VIO: request timed out type=%u sector=%llu bytes=%u\n", type, sector, bytes);
++            return ETIMEDOUT;
++        }
++        delay(1);
++    }
++    barrier();
++    /* This queue has exactly one outstanding head, so any other result is bad. */
++    volatile uint32_t *element = (volatile uint32_t *)(sv.dma + DMA_USED + 4 + (sv.used & (VQ_N - 1)) * 8);
++    if (used[1] != (uint16_t)(sv.used + 1) || element[0] != 0) {
++        sv.failed = true; vw(0x70, 0); return EIO;
++    }
++    sv.used++;
++    vw(0x64, vr(0x60));
++    if (*status != 0) {
++        printf("SWEET VIO: device error status=%u type=%u sector=%llu\n", *status, type, sector);
++        return *status == 2 ? ENOTSUP : EIO;
++    }
++    return 0;
++}
++
++static int vio_open(__unused dev_t d, int flags, __unused int type, __unused struct proc *p)
++{ return !sv.ready ? ENXIO : ((flags & FWRITE) && !sv.writable ? EROFS : 0); }
++static int vio_close(__unused dev_t d, __unused int flags, __unused int type, __unused struct proc *p)
++{ return 0; }
++
++static void
++vio_strategy(buf_t bp)
++{
++    uint64_t off = (uint64_t)buf_blkno(bp) * sv.secsize;
++    uint32_t count = buf_count(bp);
++    bool read = (buf_flags(bp) & B_READ) != 0;
++    uint64_t capacity = sv.sectors * 512;
++    int error = 0;
++    caddr_t address = NULL;
++    buf_setresid(bp, count);
++    if (!sv.ready || sv.failed) { error = EIO; goto done; }
++    if (!read && !sv.writable) { error = EROFS; goto done; }
++    if ((off & 511) || (count & 511) || off > capacity || count > capacity - off) {
++        error = EINVAL; goto done;
++    }
++    if (!count) { goto done; }
++    if (buf_map(bp, &address)) { error = EIO; goto done; }
++    lck_mtx_lock(&sweet_vio_lock);
++    for (uint32_t done = 0; done < count;) {
++        uint32_t bytes = MIN(count - done, IO_MAX);
++        if (!read) { memcpy((void *)(sv.dma + DMA_DATA), address + done, bytes); }
++        error = vio_request(read ? 0 : 1, (off + done) / 512, bytes);
++        if (error) { break; }
++        if (read) { memcpy(address + done, (void *)(sv.dma + DMA_DATA), bytes); }
++        done += bytes;
++        buf_setresid(bp, count - done);
++    }
++    lck_mtx_unlock(&sweet_vio_lock);
++    buf_unmap(bp);
++done:
++    if (error) { buf_seterror(bp, error); }
++    buf_biodone(bp);
++}
++
++static int
++vio_ioctl(__unused dev_t d, u_long cmd, caddr_t data, __unused int flags, __unused struct proc *p, bool character)
++{
++    uint32_t *n = (uint32_t *)data;
++    uint64_t *q = (uint64_t *)data;
++    switch (cmd) {
++    case DKIOCGETBLOCKSIZE: *n = sv.secsize; return 0;
++    case DKIOCSETBLOCKSIZE:
++        if (character || *n < 512 || *n > 4096 || (*n & (*n - 1))) { return EINVAL; }
++        sv.secsize = *n; return 0;
++    case DKIOCGETPHYSICALBLOCKSIZE: *n = 512; return 0;
++    case DKIOCGETBLOCKCOUNT: *q = sv.sectors * 512 / sv.secsize; return 0;
++    case DKIOCISWRITABLE: *n = sv.writable; return 0;
++    case DKIOCGETMAXBLOCKCOUNTREAD: *q = IO_MAX / sv.secsize; return 0;
++    case DKIOCGETMAXBLOCKCOUNTWRITE: *q = sv.writable ? IO_MAX / sv.secsize : 0; return 0;
++    case DKIOCGETMAXSEGMENTCOUNTREAD:
++    case DKIOCGETMAXSEGMENTCOUNTWRITE: *q = 1; return 0;
++    case DKIOCSYNCHRONIZE:
++    case DKIOCSYNCHRONIZECACHE: {
++        if (!(sv.features & F_FLUSH) || !sv.writable) { return 0; }
++        lck_mtx_lock(&sweet_vio_lock);
++        int error = vio_request(4, 0, 0);
++        lck_mtx_unlock(&sweet_vio_lock);
++        return error;
++    }
++    default: return ENOTTY;
++    }
++}
++static int vio_bioctl(dev_t d, u_long c, caddr_t a, int f, struct proc *p) { return vio_ioctl(d,c,a,f,p,false); }
++static int vio_cioctl(dev_t d, u_long c, caddr_t a, int f, struct proc *p) { return vio_ioctl(d,c,a,f,p,true); }
++static int vio_psize(__unused dev_t d) { return sv.ready ? (int)MIN(sv.sectors * 512 / sv.secsize, INT_MAX) : -1; }
++static int vio_read(dev_t d, struct uio *u, __unused int f) { return physio(vio_strategy, NULL, d, B_READ, minphys, u, sv.secsize); }
++static int vio_write(dev_t d, struct uio *u, __unused int f) { return sv.writable ? physio(vio_strategy, NULL, d, B_WRITE, minphys, u, sv.secsize) : EROFS; }
++static const struct bdevsw vio_bdevsw = {
++    .d_open=vio_open, .d_close=vio_close, .d_strategy=vio_strategy,
++    .d_ioctl=vio_bioctl, .d_dump=eno_dump, .d_psize=vio_psize, .d_type=D_DISK,
++};
++static const struct cdevsw vio_cdevsw = {
++    .d_open=vio_open, .d_close=vio_close, .d_read=vio_read, .d_write=vio_write,
++    .d_ioctl=vio_cioctl, .d_stop=eno_stop, .d_reset=eno_reset, .d_ttys=NULL,
++    .d_select=eno_select, .d_mmap=eno_mmap, .d_strategy=eno_strat,
++    .d_reserved_1=eno_getc, .d_reserved_2=eno_putc, .d_type=D_DISK,
++};
++
++static int
++vio_init(void)
++{
++    DTEntry entry;
++    const uintptr_t *reg = NULL;
++    unsigned int size = 0;
++    if (SecureDTLookupEntry(NULL, "/sweet-virtio", &entry) != kSuccess ||
++        SecureDTGetProperty(entry, "reg", (const void **)&reg, &size) != kSuccess ||
++        size != 2 * sizeof(uintptr_t) || reg[1] != 0x4000) { return ENXIO; }
++    vm_offset_t base = ml_io_map(reg[0], reg[1]);
++    for (uint32_t off = 0; off < 0x4000; off += 0x200) {
++        sv.regs = base + off;
++        if (vr(0) == 0x74726976 && vr(8) == 2) { break; }
++        sv.regs = 0;
++    }
++    if (!sv.regs || vr(4) != 2) {
++        printf("SWEET VIO: modern virtio-mmio block device absent\n"); return ENXIO;
++    }
++    vw(0x70, 0);
++    if (vr(0x70)) { return EIO; }
++    vw(0x70, 3);
++    vw(0x14, 1);
++    if (!(vr(0x10) & 1)) { return ENOTSUP; }
++    vw(0x14, 0);
++    sv.features = vr(0x10) & (F_RO | F_FLUSH);
++    vw(0x24, 0); vw(0x20, sv.features);
++    vw(0x24, 1); vw(0x20, 1);
++    vw(0x70, 11);
++    if (!(vr(0x70) & 8)) { return ENOTSUP; }
++    vw(0x30, 0);
++    if (vr(0x34) < VQ_N || vr(0x44)) { return EIO; }
++    if (kmem_alloc_contig(kernel_map, &sv.dma, DMA_SIZE, PAGE_MASK, 0, 0,
++        KMA_DATA | KMA_ZERO | KMA_PERMANENT, VM_KERN_MEMORY_IOKIT) != KERN_SUCCESS) { return ENOMEM; }
++    ppnum_t page = pmap_find_phys(kernel_pmap, (addr64_t)sv.dma);
++    if (!page) { return ENOMEM; }
++    sv.pa = ptoa_64(page);
++    vw(0x38, VQ_N);
++    vw(0x80, (uint32_t)sv.pa); vw(0x84, (uint32_t)(sv.pa >> 32));
++    vw(0x90, (uint32_t)(sv.pa + DMA_AVAIL)); vw(0x94, (uint32_t)((sv.pa + DMA_AVAIL) >> 32));
++    vw(0xa0, (uint32_t)(sv.pa + DMA_USED)); vw(0xa4, (uint32_t)((sv.pa + DMA_USED) >> 32));
++    barrier();
++    vw(0x44, 1); vw(0x70, 15);
++    bool stable = false;
++    for (unsigned int attempt = 0; attempt < 8; attempt++) {
++        uint32_t generation = vr(0xfc);
++        uint32_t lo = vr(0x100), hi = vr(0x104);
++        if (generation == vr(0xfc)) { sv.sectors = (uint64_t)lo | ((uint64_t)hi << 32); stable = true; break; }
++    }
++    if (!stable || !sv.sectors || sv.sectors > UINT64_MAX / 512) { return EIO; }
++    int rw = 0;
++    PE_parse_boot_argn("viorw", &rw, sizeof(rw));
++    sv.writable = rw && !(sv.features & F_RO);
++    sv.secsize = 512;
++    int error = vio_request(0, 0, 4096);
++    if (error) { return error; }
++    uint8_t *data = (uint8_t *)(sv.dma + DMA_DATA);
++    printf("SWEET VIO: disk %llu MiB at 0x%llx, HFS signature %02x%02x, %s\n",
++        sv.sectors >> 11, (uint64_t)(reg[0] + sv.regs - base), data[1024], data[1025], sv.writable ? "read/write" : "read-only");
++    sv.bmajor = bdevsw_add(-1, &vio_bdevsw);
++    if (sv.bmajor < 0) { return ENXIO; }
++    sv.cmajor = cdevsw_add_with_bdev(-1, &vio_cdevsw, sv.bmajor);
++    if (sv.cmajor < 0) { return ENXIO; }
++    sv.bdev = makedev(sv.bmajor, 0);
++    devfs_make_node(sv.bdev, DEVFS_BLOCK, UID_ROOT, GID_OPERATOR, 0640, "vioroot0");
++    devfs_make_node(makedev(sv.cmajor, 0), DEVFS_CHAR, UID_ROOT, GID_OPERATOR, 0640, "rvioroot0");
++    sv.ready = true;
++    return 0;
++}
++int sweet_virtio_rootdev(dev_t *dev);
++int sweet_virtio_rootdev(dev_t *dev)
++{
++    int error = sv.ready ? 0 : vio_init();
++    if (!error) { *dev = sv.bdev; }
++    return error;
++}
++#endif
