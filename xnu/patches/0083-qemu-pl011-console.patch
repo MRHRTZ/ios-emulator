@@ -1,0 +1,20 @@
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -592,7 +592,7 @@
+ 
+ /*****************************************************************************/
+ 
+-#ifdef VMAPPLE_UART
++#if defined(VMAPPLE_UART) || defined(ARM64_BOARD_CONFIG_SWEET)
+ 
+ static vm_offset_t vmapple_uart0_base_vaddr = 0;
+ 
+@@ -938,7 +938,7 @@
+ 	}
+ #endif /* PI3_UART */
+ 
+-#ifdef VMAPPLE_UART
++#if defined(VMAPPLE_UART) || defined(ARM64_BOARD_CONFIG_SWEET)
+ 	if (SecureDTFindEntry("name", "uart0", &entryP) == kSuccess) {
+ 		SecureDTGetProperty(entryP, "reg", (void const **)&reg_prop, &prop_size);
+ 		vmapple_uart0_base_vaddr = ml_io_map(soc_base + *reg_prop, *(reg_prop + 1));
