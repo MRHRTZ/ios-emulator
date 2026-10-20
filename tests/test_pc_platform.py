@@ -43,6 +43,14 @@ class InputTests(unittest.TestCase):
         self.assertTrue(s.input(1,0,False,540,1200))
         self.assertFalse(s.held_inputs)
         self.assertEqual(s.qtest.events[-1][1][1:6],(1,0,0,540,1200))
+    def test_touch_move_waits_for_guest_to_consume_down(self):
+        s=self.session();self.assertTrue(s.input(1,0,True,540,2000))
+        self.assertFalse(s.input(1,0,True,540,1000))
+        self.assertEqual(len(s.qtest.events),1)
+        s.qtest.header[3]=s.qtest.header[2]
+        self.assertTrue(s.input(1,0,True,540,1000))
+        self.assertEqual(s.qtest.events[-1][1][4:6],(540,1000))
+
     def test_ring_counter_wrap_keeps_sequence_and_slot_valid(self):
         s=self.session(0xffffffff,0xffffffff)
         self.assertTrue(s.input(2,0,True))
@@ -101,6 +109,29 @@ class DesktopInteractionTests(unittest.TestCase):
         self.assertIn((3,4),session.held_inputs)
         self.assertTrue(session.input(3,4,False))
         self.assertFalse(session.held_inputs)
+
+    def test_windows_text_packets_and_shifted_physical_key_release(self):
+        from emulator_gui import Screen, ascii_key_strokes
+        from PySide6.QtCore import Qt,QEvent
+        from PySide6.QtGui import QKeyEvent
+        from PySide6.QtWidgets import QApplication
+        app=QApplication.instance() or QApplication([])
+        screen=Screen();screen.enabled_input=True
+        events=[];screen.keyboard.connect(lambda usage,down:events.append((usage,down)))
+        packet=QKeyEvent(QEvent.Type.KeyPress,Qt.Key.Key_unknown,Qt.KeyboardModifier.NoModifier,0,0xE7,0,'A!z')
+        screen.keyPressEvent(packet)
+        self.assertEqual(events,[(225,True),(4,True),(4,False),(225,False),
+                                 (225,True),(30,True),(30,False),(225,False),(29,True),(29,False)])
+        self.assertFalse(screen.held_keys)
+        self.assertEqual(ascii_key_strokes('\u00e9'),[])
+        events.clear()
+        screen.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress,Qt.Key.Key_Exclam,Qt.KeyboardModifier.ShiftModifier,2,0x31,0,'!'))
+        screen.keyReleaseEvent(QKeyEvent(QEvent.Type.KeyRelease,Qt.Key.Key_1,Qt.KeyboardModifier.NoModifier,2,0x31,0,'1'))
+        self.assertEqual(events,[(30,True),(30,False)])
+        screen.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress,Qt.Key.Key_A,Qt.KeyboardModifier.NoModifier,'a'))
+        screen.release_keys()
+        self.assertEqual(events[-2:],[(4,True),(4,False)])
+        screen.close()
 
     def test_stop_clears_screen_and_drops_queued_frames(self):
         from emulator_gui import Window

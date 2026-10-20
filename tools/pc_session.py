@@ -299,6 +299,11 @@ class PcSession:
         _, _, head, tail, *_ = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
         if ((head - tail) & 0xffffffff) >= INPUT_SLOTS:
             return False
+        # Deliver touch edges in separate guest poll cycles. A fast host drag
+        # can otherwise enqueue down/move/up in one guest tick and look like a
+        # tap to UIKit, even though all coordinates reached the HID ring.
+        if kind == 1 and head != tail:
+            return False
         record = struct.pack('<8I', (head + 1) & 0xffffffff, kind, code, int(bool(down)), x, y, 0, 0)
         self.qtest.write(INPUT_ADDRESS + 64 + (head & 63) * 32, record)
         self.qtest.write32(INPUT_ADDRESS + 8, (head + 1) & 0xffffffff)

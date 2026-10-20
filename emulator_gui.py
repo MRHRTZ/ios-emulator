@@ -251,18 +251,28 @@ class Screen(QWidget):
 
     def keyPressEvent(self, event):
         if self.enabled_input and self.capture_keyboard:
-            usage = keyboard_usage(event.key())
+            # Windows SendInput/assistive text uses VK_PACKET, without physical
+            # modifier events. Convert supported ASCII into complete HID strokes.
+            if event.nativeVirtualKey() == 0xE7 or event.key() == Qt.Key.Key_unknown:
+                strokes = ascii_key_strokes(event.text())
+                if strokes:
+                    for usage, down in strokes: self.keyboard.emit(usage, down)
+                    event.accept()
+                    return
+            usage = keyboard_usage(event.key(), event.nativeVirtualKey())
+            token = event.nativeVirtualKey() or event.key()
             if usage:
-                if not event.isAutoRepeat() and event.key() not in self.held_keys:
-                    self.held_keys[event.key()] = usage
+                if not event.isAutoRepeat() and token not in self.held_keys:
+                    self.held_keys[token] = usage
                     self.keyboard.emit(usage, True)
                 event.accept()
                 return
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
-        if event.key() in self.held_keys:
-            if not event.isAutoRepeat(): self.keyboard.emit(self.held_keys.pop(event.key()), False)
+        token = event.nativeVirtualKey() or event.key()
+        if token in self.held_keys:
+            if not event.isAutoRepeat(): self.keyboard.emit(self.held_keys.pop(token), False)
             event.accept()
             return
         super().keyReleaseEvent(event)
@@ -273,7 +283,35 @@ class Screen(QWidget):
         super().focusOutEvent(event)
 
 
-def keyboard_usage(key):
+def ascii_key_strokes(text):
+    """US-layout printable ASCII packets; unsupported Unicode is left to Qt."""
+    plain = "1234567890-=[]\\;'`,./"
+    shifted = '!@#$%^&*()_+{}|:"~<>?'
+    usages = (30,31,32,33,34,35,36,37,38,39,45,46,47,48,49,51,52,53,54,55,56)
+    strokes = []
+    for char in text:
+        shift = False
+        if char.isascii() and 'a' <= char.lower() <= 'z':
+            usage = 4 + ord(char.lower()) - ord('a'); shift = char.isupper()
+        elif char == ' ': usage = 44
+        elif char in plain: usage = usages[plain.index(char)]
+        elif char in shifted: usage = usages[shifted.index(char)]; shift = True
+        else: return []
+        if shift: strokes.append((225, True))
+        strokes.extend(((usage, True), (usage, False)))
+        if shift: strokes.append((225, False))
+    return strokes
+
+
+def keyboard_usage(key, native_virtual_key=0):
+    # OEM virtual keys identify the physical key even when Qt reports a shifted
+    # symbol. Stable native tokens also pair its key-up after Shift is released.
+    native = {0xBA:51,0xBB:46,0xBC:54,0xBD:45,0xBE:55,0xBF:56,
+              0xC0:53,0xDB:47,0xDC:49,0xDD:48,0xDE:52,
+              0xA0:225,0xA1:229,0xA2:224,0xA3:228,0xA4:226,0xA5:230}
+    if native_virtual_key in native: return native[native_virtual_key]
+    if 0x30 <= native_virtual_key <= 0x39:
+        return 39 if native_virtual_key == 0x30 else 30 + native_virtual_key - 0x31
     if Qt.Key.Key_A <= key <= Qt.Key.Key_Z: return 4 + key - Qt.Key.Key_A
     if Qt.Key.Key_1 <= key <= Qt.Key.Key_9: return 30 + key - Qt.Key.Key_1
     return {Qt.Key.Key_0:39, Qt.Key.Key_Return:40, Qt.Key.Key_Enter:40,

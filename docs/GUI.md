@@ -17,11 +17,12 @@ display never shows a tooltip. Click for touch, drag to swipe, and type using
 the iOS on-screen keyboard. Kernel 0091 adds PC keyboard capture: click the
 iOS display to focus it, and toggle the keyboard sidebar button. Focus loss,
 Pause and Stop release held keys. Current mapping covers a US physical layout;
-IME/composed text is not implemented.
+Windows printable ASCII text packets are converted to US-layout HID strokes.
+IME/composed non-ASCII text is not implemented.
 
 | Control | Shortcut |
 | --- | --- |
-| Home / unlock | F1 or Esc |
+| Home / unlock | F1 |
 | Recent apps | Sidebar Apps button |
 | Power / lock | F2 |
 | Hardware Home compatibility key | F6 |
@@ -45,7 +46,7 @@ flush QEMU's disk backend but currently cut guest power: they are not an
 orderly iOS shutdown. The HFS journal is replayed on the next boot.
 
 Logs and diagnostic metadata live in `data/gui/runs/<timestamp>/`; logs are
-available in the toolbar. The current session is described by
+available through the Logs sidebar toggle. The current session is described by
 `data/gui/active.json` (check the PID before assuming it is still active).
 
 RTC uses QEMU's host UTC clock. Guest timezone settings can change the displayed
@@ -58,8 +59,8 @@ Real home/search/on-screen keyboard/Home input were visually verified with
 one CPU. Kernel smoke tests pass with 2/4 CPUs; real Apple launchd and
 SpringBoard execution were observed with four CPUs and current-day timestamps.
 A four-core home screen and hardware Home/unlock were subsequently verified.
-IPv6 DNS and remote TLS data are verified; Safari rendering and IPv4 DHCP
-remain under validation. All three multicore spinlock policies use a finite
+IPv6 DNS and remote TLS data are verified; kernel0090 DHCP also assigns
+10.0.2.15 and the default route. Safari webpage drawing remains unresolved. All three multicore spinlock policies use a finite
 five-second timeout to accommodate TCG/frame-export scheduling.
 
 For local network diagnosis only, set `IOS_EMULATOR_CAPTURE_NETWORK=1` before
@@ -77,5 +78,8 @@ persists. The compact status bar uses a spinner while loading and shows actual
 frame-export FPS in the foreground theme color.
 
 Stop immediately blanks the display and rejects queued frames while QEMU exits.
-Automatic Home is sent once after a colored lock/home screen is detected,
+Automatic Home uses an edge swipe after a white/colored lock/home frame is detected,
 avoiding an input during the initial black/Apple boot frame.
+
+The loading spinner sits left of the status text with padding; the FPS field
+has no separator. See [Safari rendering investigation](SAFARI_RENDERING.md).

@@ -59,3 +59,5 @@ Root preparation and kernel requirements are explained in the setup guides.
 Development: **dev/window-native**. Windows releases: **window-native**.
 Stable cross-platform QEMU: **main**. Development is not automatically promoted
 to release/stable. Wrapper/installer comes after emulator validation.
+
+- [Safari white-page investigation](docs/SAFARI_RENDERING.md)
