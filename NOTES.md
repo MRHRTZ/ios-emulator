@@ -1,3 +1,12 @@
+## Pause/setup milestone — 2026-10-21
+
+- Kernel0092 CI39503279573 SUCCESS; download to xnu/out-0092 started. Default0091 still untouched. Verify SHA256SUMS before installing, after stopping current GUI/QEMU cleanly.
+- Runtime0091 physical Backspace visibly removed E; Ctrl+P pause/resume controls work. Longer second pause started about04:54:47 WIB with guest clock2:54. Before resume record current host time and compare guest clock after it settles. Guest display timezone differs from host; compare elapsed time rather than hour labels.
+- Fixed Worker exporting while paused and reporting misleading capture FPS: pause now skips capture, resets FPS counters/deadline; test asserts no frame export while paused. 42 tests PASS.
+- Installed requirements into pre-existing venv (previously only pip). pip check PASS; all42 tests PASS under venv Python3.12; PySide6/lzfse/pycdlib import paths confirmed under venv/Lib/site-packages. Existing system Python unaffected.
+- Added clean windows-latest workflow for pinned dependency install/pip check/Qt host regressions/entry-point compile. No firmware needed or boot claimed. Await its first CI pass before completing clean-Windows setup TODO. Updated docs/WINDOWS setup; legacy bring-up observations remain explicitly labeled historical.
+
+---
 ## Input/extraction milestone — 2026-10-21
 
 - Kernel0092 CI39503279573 currently building (source df85fa3). Local syntax compile passed; do not install until CI/checksum checks pass.

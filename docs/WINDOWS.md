@@ -1,3 +1,34 @@
+# Current Python environment
+
+From the repository root in PowerShell:
+
+```powershell
+python -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe -m pip check
+$env:PYTHONPATH = "tools"
+$env:QT_QPA_PLATFORM = "offscreen"
+.\venv\Scripts\python.exe -m unittest discover -s tests -v
+Remove-Item Env:QT_QPA_PLATFORM
+.\venv\Scripts\python.exe emulator.py doctor
+.\venv\Scripts\python.exe emulator.py gui
+```
+
+The pinned requirements include the desktop GUI, LZFSE decoder and root-helper
+ISO writer. The CLI's basic download/inspect commands use Python's standard
+library. QEMU and LLVM remain separate native dependencies. The ignored venv
+is local and is never uploaded.
+
+The **Windows host tests** GitHub Actions workflow repeats dependency installation,
+`pip check`, Qt/host regressions and entry-point compilation on a clean Windows
+runner without Apple firmware. This tests Python setup and host behavior; it does
+not establish successful guest boot or replace QEMU/runtime testing.
+
+The sections below preserve the earlier kernel bring-up baseline. Use
+[STATUS.md](STATUS.md) and [TODO.md](../TODO.md) for current guest evidence.
+
+---
+
 For the current Python CLI and the newer PID 1/firmware milestones, see [CLI.md](CLI.md) and [../TODO.md](../TODO.md). The commands and first-boot observations below are the earlier bring-up baseline.
 
 # Windows native setup

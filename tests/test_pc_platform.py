@@ -301,3 +301,22 @@ class ClipboardInputTests(unittest.TestCase):
             self.assertEqual(text[-1],'input')
         finally:
             app.clipboard().setText(old);screen.close()
+
+
+class PausedFrameTests(unittest.TestCase):
+    def test_paused_worker_never_exports_frames_and_reports_zero_fps(self):
+        from emulator_gui import Worker
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from pathlib import Path
+        worker=Worker({'memory_mib':2048,'cpu_count':2,'fps':60})
+        frame=Mock(side_effect=AssertionError('Paused guest must not be exported'))
+        def poll():worker.stopping.set();return ''
+        session=SimpleNamespace(start=lambda:None,pause=Mock(),poll=poll,frame=frame,
+                                out=Path('.'),input_ready=True,stage='display',stop=lambda:None)
+        states=[];worker.state.connect(lambda *args:states.append(args))
+        worker.submit('pause',True)
+        with patch('emulator_gui.PcSession',return_value=session):worker.run()
+        session.pause.assert_called_once_with(True)
+        frame.assert_not_called()
+        self.assertIn(('paused',True,0.),states)

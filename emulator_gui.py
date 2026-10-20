@@ -124,6 +124,8 @@ class Worker(QObject):
                         scheduled.clear()
                         paused = bool(command[1])
                         self.session.pause(paused)
+                        frames, fps, measured = 0, 0., time.monotonic()
+                        next_frame = 0
                     elif command[0] == 'input' and not paused and self.session.input_ready:
                         order += 1
                         heapq.heappush(scheduled, (now, order, command[1:]))
@@ -150,7 +152,7 @@ class Worker(QObject):
                         self.log.emit(delta)
                     self.state.emit('paused' if paused else self.session.stage, self.session.input_ready, fps)
                     next_poll = now + .25
-                if now >= next_frame and not self.frame_pending.is_set():
+                if not paused and now >= next_frame and not self.frame_pending.is_set():
                     data = self.session.frame()
                     if data is not None:
                         image = QImage(data, FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4, QImage.Format.Format_RGB32).copy()
