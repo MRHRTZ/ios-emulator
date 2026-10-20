@@ -427,3 +427,27 @@ class SupportedCpuLimitTests(unittest.TestCase):
                 window=Window(auto_start=False)
                 self.assertLessEqual(window.settings['cpu_count'],4)
                 window.close()
+
+
+class UnlockRetryTests(unittest.TestCase):
+    def test_retries_only_dark_lock_clock_and_stops_after_three_attempts(self):
+        from emulator_gui import Window
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QImage,QColor,QPainter
+        from types import SimpleNamespace
+        app=QApplication.instance() or QApplication([])
+        w=Window(auto_start=False);w.worker=SimpleNamespace();w.stage='display'
+        image=QImage(1080,2400,QImage.Format.Format_RGB32);image.fill(QColor('black'))
+        painter=QPainter(image);painter.fillRect(350,350,380,100,QColor('red'));painter.end()
+        self.assertTrue(w.lock_clock_visible(image))
+        w.screen.image=image;w.auto_home_pending=False
+        with patch.object(w,'go_home') as home,patch('emulator_gui.time.monotonic',return_value=10):
+            w.startup_unlock()
+            for stamp in (19,28,37):
+                with patch('emulator_gui.time.monotonic',return_value=stamp):w.check_startup()
+            self.assertEqual(home.call_count,3)
+        image.fill(QColor('white'));self.assertFalse(w.lock_clock_visible(image))
+        image.fill(QColor('black'));painter=QPainter(image)
+        painter.fillRect(300,300,200,170,QColor('blue'));painter.end()
+        self.assertFalse(w.lock_clock_visible(image))
+        w.worker=None;w.close()

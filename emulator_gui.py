@@ -433,6 +433,8 @@ class Window(QMainWindow):
         self.startup_seen_image = False
         self.startup_wake_count = 0
         self.startup_last_wake = 0.
+        self.startup_unlock_tries = 0
+        self.startup_unlock_at = 0.
         self.buttons = []
         if self.settings_path.exists():
             try:
@@ -692,6 +694,8 @@ class Window(QMainWindow):
         self.startup_wake_count = 0
         self.startup_last_wake = 0.
         self.screen.image = QImage()
+        self.startup_unlock_tries = 0
+        self.startup_unlock_at = 0.
         self.screen.message = 'Starting iOS...'
         self.screen.update()
         self.worker = Worker(self.settings, self.kernel, self.overlay)
@@ -715,6 +719,10 @@ class Window(QMainWindow):
         # startup wake attempts when the framebuffer stays black.
         if not self.worker or self.stopping or self.shutting_down or self.screen.image.isNull(): return
         image=self.screen.image
+        if (not self.auto_home_pending and self.stage=='display' and not self.paused and
+                0 < self.startup_unlock_tries < 3 and time.monotonic()-self.startup_unlock_at>=8 and
+                self.lock_clock_visible(image)):
+            self.startup_unlock()
         if self.auto_home_pending and self.stage=='display' and not self.paused:
             now=time.monotonic()
             if self.startup_display_at is None:self.startup_display_at=now
@@ -731,13 +739,34 @@ class Window(QMainWindow):
             if colorful>=8 or (top_bright>=8 and bright<250):
                 self.auto_home_pending=False
                 self.append_log('Startup: lock/home frame detected; scheduling unlock swipe.')
-                QTimer.singleShot(2500,self.go_home)
+                QTimer.singleShot(2500,self.startup_unlock)
             elif bright>=8:
                 self.startup_seen_image=True
             elif self.startup_seen_image and self.startup_wake_count<12 and now-self.startup_last_wake>=30:
                 self.startup_wake_count+=1;self.startup_last_wake=now
                 self.append_log(f'Startup: display asleep; waking it ({self.startup_wake_count}/12).')
                 self.key_click(0)
+
+    @staticmethod
+    def lock_clock_visible(image):
+        # Conservative check for the large clock on the current dark lock
+        # screen. Ignore bright/full-photo backgrounds and home icon tiles.
+        bright=warm=colored=total=0
+        for y in range(int(image.height()*.12),int(image.height()*.27),25):
+            for x in range(int(image.width()*.2),int(image.width()*.8),25):
+                c=image.pixelColor(x,y);total+=1
+                lit=max(c.red(),c.green(),c.blue())>60
+                bright+=lit
+                warm+=c.red()>100 and c.red()>c.green()*1.5 and c.red()>c.blue()*1.5
+                colored+=max(c.red(),c.green(),c.blue())-min(c.red(),c.green(),c.blue())>30
+        return 25<=bright<total*.55 and (warm>=20 or colored<8)
+
+    def startup_unlock(self):
+        if not self.worker or self.stopping or self.shutting_down or self.paused or self.stage!='display':return
+        if self.startup_unlock_tries>=3:return
+        self.startup_unlock_tries+=1;self.startup_unlock_at=time.monotonic()
+        self.append_log(f'Startup: unlock swipe {self.startup_unlock_tries}/3.')
+        self.go_home()
 
     def append_log(self, text):
         self.logs.appendPlainText(text.rstrip())
@@ -877,7 +906,7 @@ class Window(QMainWindow):
         if self.worker and self.screen.enabled_input:
             # D22AP is a Face ID phone. Mirror the actual edge swipe observed
             # unlocking this guest; consumer Menu events can be ignored at lock.
-            self.worker.submit('gesture', 540, 2380, 540, 1365, .20, 0.)
+            self.worker.submit('gesture', 540, 2380, 540, 1365, .40, 0.)
 
     def app_switcher(self):
         if self.worker and self.screen.enabled_input:

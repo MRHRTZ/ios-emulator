@@ -1,3 +1,10 @@
+## Four-core startup retry needed - 2026-10-21 05:26 WIB
+
+- Current GUI3419/window1246684, QEMU1064 run20261021-052131-435300, kernel0094 verified SHA7604042b608b242b6f7cd400bb8aad6f1e68f2415987a21c510a443e944b56f6,4CPU/4096MiB/target60. Auto wake worked and first automatic swipe was acknowledged, but lock remained visible through05:26. Manual sidebar Home sent at05:26 to continue tests; do not claim this four-core boot auto-unlocked.
+- Added bounded unlock retries: recheck current dark-lock large-clock pattern after8secs, at most3 attempts, exclude bright backgrounds/home tiles. Home swipe duration0.40sec instead of0.20sec.50 tests PASS. Current GUI predates this change; next restart required to validate it. No new kernel build needed.
+- Local-only readonly disk inspector prepared at data/tools/guest_job.py and data/guest-shutdown-inspect/{job.sh,job.py}; defaults readonly, acquires same overlay lock, uses a fresh Linux-helper qcow2 over existing helper backing, fsck -fn and readonly mount. DO NOT launch while GUI/QEMU owns overlay; use after orderly-shutdown test to validate filesystem and inspect wallpaper store. No helper launched yet.
+
+---
 ## Two-core auto-start and resume verified - 2026-10-21 05:19 WIB
 
 - Kernel0093 run20261021-051133-594800 / QEMU12316 / GUI1473 window1050996: fresh Start at05:11:33; no manual Home/Power thereafter. Home visibly reached by05:15:11 through automatic wake/swipe (four Power pairs and one touch gesture). Repeat on four CPUs before generalizing.
