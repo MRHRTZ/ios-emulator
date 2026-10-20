@@ -91,10 +91,17 @@ def helper_image(base):
     return image
 
 
+def completed(log):
+    # Cloud-init may prefix stdout with the kernel timestamp and its PID.
+    # Only accept a complete marker line, never an echoed command or substring.
+    return bool(re.search(r'(?m)^(?:\[\s*\d+\.\d+\]\s+cloud-init\[\d+\]:[ \t]*)?ROOT_BUILD_OK[ \t]*$',
+                          log.replace('\r', '')))
+
+
 def promote(root, log):
     base = root / 'data/root'
     staging, output = base / 'ios-root-build.img', base / 'ios-root.img'
-    if not re.search(r'(?m)^ROOT_BUILD_OK\s*$', log.replace('\r', '')):
+    if not completed(log):
         raise ValueError('Helper did not report a completed filesystem check; inspect data/root-helper/serial.log')
     geometry = hfs_header(staging)
     if not geometry['clean'] or geometry['volume_bytes'] != DISK_BYTES:
@@ -109,7 +116,7 @@ def promote(root, log):
     return output
 
 
-def prepare(root, qemu_executable, timeout=3600):
+def prepare(root, qemu_executable, timeout=3600, check_only=False):
     root = Path(root)
     base = root / 'data/root-helper'
     base.mkdir(parents=True, exist_ok=True)
@@ -126,7 +133,7 @@ def prepare(root, qemu_executable, timeout=3600):
             return follow(root, state['pid'], timeout)
         if (base / 'serial.log').exists():
             previous = (base / 'serial.log').read_text(errors='replace')
-            if re.search(r'(?m)^ROOT_BUILD_OK\s*$', previous.replace('\r', '')):
+            if completed(previous):
                 return promote(root, previous)
     try:
         import pycdlib
@@ -145,6 +152,8 @@ def prepare(root, qemu_executable, timeout=3600):
     staging = output.parent / 'ios-root-build.img'
     staging.parent.mkdir(exist_ok=True)
     if not staging.exists():
+        if check_only:
+            raise ValueError('No staging root disk to check')
         sparse_file(staging, DISK_BYTES)
     if staging.stat().st_size != DISK_BYTES:
         raise ValueError('Existing staging disk has an unexpected size; refusing to format it')
@@ -154,7 +163,8 @@ def prepare(root, qemu_executable, timeout=3600):
                ('app', root / 'data/extracted/20H392/087-86715-047.dmg', 'ios-app-source', True)]
     if any(not path.is_file() for _, path, _, _ in sources):
         raise ValueError('Run extract and probe-root first; the helper requires all three source images')
-    files = [('build-root.sh', root / 'tools/root-helper/build-root.sh'),
+    job = 'check-root.sh' if check_only else 'build-root.sh'
+    files = [('build-root.sh', root / 'tools/root-helper' / job),
              ('sweet-root-tweaks.py', root / 'tools/sweet-root-tweaks.py')]
     config = {'write_files': [dict(path='/root/' + name, encoding='b64', permissions='0700',
                   content=base64.b64encode(path.read_bytes()).decode()) for name, path in files],

@@ -42,6 +42,10 @@ class PreparedRootTests(unittest.TestCase):
         self.assertTrue(self.staging.exists())
         self.assertFalse((self.base / 'ready.json').exists())
 
+    def test_cloud_init_timestamped_marker(self):
+        self.assertTrue(root_builder.completed('[   37.936127] cloud-init[818]: ROOT_BUILD_OK\r\n'))
+        self.assertFalse(root_builder.completed('[   37.936127] cloud-init[818]: echo ROOT_BUILD_OK\r\n'))
+
     def test_requires_complete_success_marker(self):
         self.header()
         with self.assertRaises(ValueError):

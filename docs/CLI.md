@@ -39,6 +39,9 @@ python emulator.py status
   Emits preparation stages; progress is saved in `data/root-helper/progress.json`.
   A completed filesystem check and clean volume header are required before
   publishing `data/root/ios-root.img`; interrupted construction stays separate.
+  Use `prepare-root --check-only` to recheck a completed staging disk without
+  recopying firmware. A long-path bug in hfsprogs is avoided by resolving the
+  validated disk serial link to the short guest device path.
 - `run --test`: assembles the included tiny userspace program, wraps it in
   a Mach-O RAM root, builds a payload, and runs QEMU for 45 seconds. Success
   requires the PID 1 marker and a decoded screen with no visible panic.
@@ -46,12 +49,18 @@ python emulator.py status
   Boots through virtio block storage with a new qcow2 overlay on every run.
   The base image is preserved. Serial console streams to the CLI.
   Default kernel-managed RAM is 2048 MiB; use `--memory-mib` (256..4096) to change it.
-  The CLI never substitutes the test program for real iOS.
+  The CLI never substitutes the test program for real iOS. The default run
+  lasts 300 seconds; choose `--secs` for longer runs. Each run ends with a
+  framebuffer snapshot and serial log in its run directory.
 - `run --disk-image <path>`: selects another prepared raw HFS+ disk.
   Changes remain in the run directory overlay; reuse/promotion is not yet exposed.
 - `run --root-image <path>`: tests a supplied prepared raw RAM-root image;
   IPSW/DMG inputs and roots larger than the current 1 GiB limit are rejected.
 - `status`: shows download phase and the last saved run summary.
+  `apple_userland_started` requires the Apple launchd early-boot log;
+  `springboard_exec_observed` records execution separately. Neither flag
+  claims that the home screen or input works. Serial panic and root mount
+  errors remain failures even if an earlier boot milestone was reached.
 
 Other useful options:
 
@@ -86,10 +95,14 @@ outside source control and outside the future application bundle.
 Kernel patches 0082/0083 were built successfully in CI run 39371527018.
 Windows QEMU executes the minimal test PID 1 with the new kernel and streams
 the serial console. Apple firmware has been downloaded and extracted; the
-16 GiB HFS+ root is being constructed with ownership, permissions, symlinks
-and hardlinks preserved by rsync. Extended attribute/ACL parity is not yet
+16 GiB HFSX root passed filesystem repair/check with 11.67 GiB used; ownership, permissions, symlinks
+and hardlinks were preserved by rsync. Extended attribute/ACL parity is not yet
 verified. The virtual disk avoids loading the whole root into guest RAM.
-Actual Apple launchd/dyld and SpringBoard still require runtime validation.
+Apple launchd completed early boot in Windows QEMU; xpcproxy, SpringBoard
+and backboardd executed and framebuffer swaps were observed. This confirms
+real Apple userspace, not a complete or interactive home screen. driverkitd
+was killed by the per-process memory limit (Jetsam namespace 1/code 7),
+confirmed from this kernel source; it has not been fixed yet.
 These binaries are downloaded from Apple's IPSW, not committed to this repo.
 See TODO.md for remaining Windows input/display and application packaging work.
 

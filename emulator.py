@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -148,10 +149,23 @@ def prepare_device_tree(ipsw):
     return 0
 
 
+def guest_status(serial, is_test=False):
+    apple = (not is_test and 'com.apple.xpc.launchd|' in serial
+             and 'Early boot complete. Continuing system boot.' in serial)
+    return {
+        'apple_userland_started': apple,
+        'springboard_exec_observed': apple and bool(re.search(r'(?m)^exec SpringBoard\r?$', serial)),
+        'root_mount_failed': 'cannot mount root' in serial and 'load_init_program:' not in serial,
+        'kernel_panic_observed': bool(re.search(r'(?m)^panic\(cpu ', serial)),
+    }
+
+
 def run(args):
     kernel = Path(args.kernel).resolve() if args.kernel else ROOT / 'xnu/out/kernel.development.sweet'
     if not kernel.is_file():
         raise ValueError(f'Kernel missing: {kernel}')
+    if args.secs is None:
+        args.secs = 45 if args.test else 300
     if args.secs <= 0:
         raise ValueError('--secs must be positive')
     block_disk = None
@@ -174,10 +188,10 @@ def run(args):
         block_disk = Path(args.disk_image).resolve() if args.disk_image else ROOT / 'data/root/ios-root.img'
         if not block_disk.is_file():
             raise ValueError('Prepared iOS disk missing. Complete prepare-root first, or use run --test explicitly.')
-        with block_disk.open('rb') as disk:
-            disk.seek(1024)
-            if disk.read(2) not in (b'H+', b'HX'):
-                raise ValueError('Root block image must be a prepared HFS+/HFSX volume')
+        import root_builder
+        geometry = root_builder.hfs_header(block_disk)
+        if not geometry['clean']:
+            raise ValueError('Root disk is not cleanly unmounted; run its filesystem check first')
         symbols = subprocess.check_output(['llvm-nm', '--defined-only', str(kernel)], text=True)
         if '_sweet_virtio_rootdev' not in symbols:
             raise ValueError('This kernel has no virtio block driver; use the kernel built with patch 0082')
@@ -212,16 +226,25 @@ def run(args):
     process = subprocess.run(command, cwd=ROOT)
     screen = (out / 'fb.txt').read_text(encoding='utf-8') if (out / 'fb.txt').exists() else ''
     result = json.loads((out / 'result.json').read_text()) if (out / 'result.json').exists() else {'status': 'runner_error'}
+    serial = (out / 'serial.txt').read_text(errors='replace') if (out / 'serial.txt').exists() else ''
+    milestones = guest_status(serial, is_test)
     marker = 'SWEET userspace: init running as PID 1'
-    reached = marker in screen
+    reached = marker in screen or marker in serial
     summary = {'mode': 'test' if is_test else ('virtio-ios-root' if block_disk else 'custom-ram-root'), 'qemu_result': result,
-               'test_pid1_observed': reached, 'full_ios_boot_verified': False,
+               'test_pid1_observed': reached, **milestones,
+               'full_ios_boot_verified': False,
                'runner_exit_code': process.returncode, 'output': str(out)}
     firmware.write_json(out / 'summary.json', summary)
     firmware.write_json(ROOT / 'data/last-run.json', summary)
     print(json.dumps(summary, indent=2))
     if is_test:
         return 0 if reached and result['status'] == 'no_panic_observed' else 1
+    if milestones['root_mount_failed'] or milestones['kernel_panic_observed']:
+        return 1
+    # Graphics cannot be decoded as console glyphs. Serial Apple boot evidence
+    # can validate userspace startup without claiming a working home screen.
+    if milestones['apple_userland_started'] and result['status'] in ('incomplete_decode', 'blank_screen'):
+        return 0
     return process.returncode
 
 
@@ -231,6 +254,7 @@ def main():
     commands.add_parser('doctor', help='Check QEMU/Python/LLVM/kernel')
     prepare = commands.add_parser('prepare-root', help='Build the iOS HFS+ disk using a temporary QEMU helper')
     prepare.add_argument('--timeout', type=int, default=3600)
+    prepare.add_argument('--check-only', action='store_true', help='Recheck completed staging disk without recopying files')
     download = commands.add_parser('download', help='Download latest iPhone X IPSW with progress/resume/checksum')
     download.add_argument('--version', default='latest', help='Latest for iPhone X, or an exact version')
     for name in ('inspect', 'extract', 'device-tree', 'probe-root'):
@@ -244,7 +268,7 @@ def main():
     boot.add_argument('--kernel')
     boot.add_argument('--qemu')
     boot.add_argument('--memory-mib', type=int, default=2048, help='Kernel RAM for disk boot (256..4096 MiB)')
-    boot.add_argument('--secs', type=float, default=45)
+    boot.add_argument('--secs', type=float, help='Run duration (default: 45 for --test, 300 for iOS)')
     commands.add_parser('status', help='Show saved download and last-run status')
     args = parser.parse_args()
     try:
@@ -255,7 +279,7 @@ def main():
             qemu = load_runner().find_qemu()
             if not qemu:
                 raise ValueError('QEMU not found')
-            root_builder.prepare(ROOT, qemu, args.timeout)
+            root_builder.prepare(ROOT, qemu, args.timeout, check_only=args.check_only)
             return 0
         if args.command == 'download':
             firmware.download(ROOT / 'data/firmware', args.version)

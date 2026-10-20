@@ -41,17 +41,19 @@ require separate compatibility work, including ARM64e/PAC and kernel ABI.
       ARM64 launchd/dyld samples; this does not produce a bootable root.
 - [ ] Build a native Windows-capable APFS/UDIF extraction pipeline that handles
       LZBITMAP and preserves permissions, ownership, symlinks, hardlinks/xattrs.
-- [ ] Produce an HFS+ root containing OS and both cryptexes, dyld shared-cache
-      links and required initial configuration. Python prepare-root now drives
-      a temporary QEMU Linux helper; construction and final fsck in progress.
+- [x] Produce an HFS+ root containing OS and both cryptexes, dyld shared-cache
+      links and required initial configuration using Python and a temporary
+      QEMU Linux helper. Root passed repair/check; 11.67 GiB used of 16 GiB.
 - [x] Implement a polled modern virtio-mmio block driver and per-run qcow2
-      overlays for disk boot. Built in CI; full-root runtime validation pending.
+      overlays for disk boot. Full 16 GiB root mounted read/write in Windows QEMU.
 - [x] Keep the full root on a virtual disk; only kernel-managed RAM is placed
       in guest memory (default 2048 MiB). Small test RAM roots remain supported.
-- [ ] Start Apple's dyld and launchd; record actual crashes and missing services.
+- [x] Start Apple's dyld and launchd; early boot complete confirmed in serial,
+      xpcproxy/SpringBoard/backboardd executed. Record remaining daemon failures.
 - [ ] Bring up backboardd/SpringBoard and verify a real home screen.
 - [ ] Add keyboard/mouse/touch-event input bridging and live display output.
-- [ ] Implement orderly guest shutdown and persistent changes.
+- [ ] Implement orderly guest shutdown and reuse of per-run persistent changes.
+- [ ] Provide a guest clock and network connection; initial clock is 1969/1970.
 
 Installing QEMU and downloading an IPSW do not complete these tasks. The CLI
 must report missing prerequisites honestly, never label the test PID 1 as iOS.

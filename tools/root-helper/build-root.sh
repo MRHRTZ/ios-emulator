@@ -17,7 +17,7 @@ if [ ! -x /opt/apfs-fuse/build/apfs-fuse ]; then
     cmake -S /opt/apfs-fuse -B /opt/apfs-fuse/build -DCMAKE_CXX_FLAGS=-include\ cstdint
     cmake --build /opt/apfs-fuse/build --clean-first -j2
 fi
-disk=/dev/disk/by-id/virtio-ios-root-output
+disk=$(readlink -f /dev/disk/by-id/virtio-ios-root-output)
 test -b "$disk"
 test "$(blockdev --getsize64 "$disk")" = 17179869184
 for id in ios-os-source ios-system-source ios-app-source; do
