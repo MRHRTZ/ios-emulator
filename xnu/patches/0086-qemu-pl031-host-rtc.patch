@@ -1,0 +1,61 @@
+--- a/iokit/Kernel/IOPlatformExpert.cpp
++++ b/iokit/Kernel/IOPlatformExpert.cpp
+@@ -59,6 +59,7 @@
+ 
+ extern "C" {
+ #include <machine/machine_routines.h>
++#include <pexpert/device_tree.h>
+ #include <pexpert/pexpert.h>
+ #include <uuid/uuid.h>
+ #include <sys/sysctl.h>
+@@ -1357,9 +1358,36 @@
+ 	PESetUTCTimeOfDay(secs, 0);
+ }
+ 
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++/* QEMU virt PL031. The node is emitted only for the PC, never the phone. */
++static vm_offset_t sweet_pc_rtc(void)
++{
++	static vm_offset_t base;
++	if (!base) {
++		DTEntry entry;
++		const uintptr_t *reg = NULL;
++		unsigned int size = 0;
++		if (SecureDTLookupEntry(NULL, "/sweet-pc-rtc", &entry) != kSuccess ||
++		    SecureDTGetProperty(entry, "reg", (const void **)&reg, &size) != kSuccess ||
++		    size != 2 * sizeof(uintptr_t) || reg[0] != 0x09010000 || reg[1] != 0x1000) { return 0; }
++		base = ml_io_map(reg[0], reg[1]);
++	}
++	return base;
++}
++#endif
++
+ void
+ PEGetUTCTimeOfDay(clock_sec_t * secs, clock_usec_t * usecs)
+ {
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	vm_offset_t rtc = sweet_pc_rtc();
++	if (rtc) {
++		*secs = *((volatile uint32_t *)rtc);
++		*usecs = 0;
++		return;
++	}
++#endif
+ 	clock_nsec_t    nsecs = 0;
+ 
+ 	*secs = 0;
+@@ -1374,6 +1402,13 @@
+ void
+ PESetUTCTimeOfDay(clock_sec_t secs, clock_usec_t usecs)
+ {
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	vm_offset_t rtc = sweet_pc_rtc();
++	if (rtc && secs <= UINT32_MAX) {
++		*((volatile uint32_t *)(rtc + 8)) = (uint32_t)secs;
++		return;
++	}
++#endif
+ 	assert(usecs < USEC_PER_SEC);
+ 	if (gIOPlatform) {
+ 		gIOPlatform->setUTCTimeOfDay(secs, usecs * NSEC_PER_USEC);

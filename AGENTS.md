@@ -14,3 +14,10 @@
   recovery, modem, persist and the backups intact, and confirm each
   destructive step with the user before running it.
 - Keep device dumps, serial numbers and downloaded Apple artifacts out of git.
+
+## Branch policy (user instruction, 2026-10-20)
+- Active Windows development: dev/window-native.
+- Windows publish/release: window-native.
+- Stable cross-platform QEMU: main.
+- Develop and validate on dev/window-native. Publish/promote changes only as a separate release step; keep release/stable branches separate from development work.
+- Native Windows APFS extraction pipeline is deferred by the user. Current priorities: English native-control GUI with icon sidebar/hover labels, no touch-area tooltip; guest RTC, virtio network, and QEMU SMP. Application bundling stays last.
