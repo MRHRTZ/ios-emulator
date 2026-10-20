@@ -1,3 +1,11 @@
+## Four-core RTC and screenshot milestone - 2026-10-21 05:29 WIB
+
+- Kernel0094 run20261021-052131-435300 paused at05:27:21; UTC lag75.67sec at05:28:37. Resume shortly afterward emitted calendar-resynchronized marker and lag returned0.68sec, no warning, held-input count0/backlog0. Settings clicked afterward to verify UI responsiveness; wait for fresh visual result before completing combined2/4CPU TODO.
+- Windows host CI39508175791 SUCCESS for75d7c08,50 tests. Kernel0094 CI39505871637 SUCCESS remains current kernel provenance.
+- Actual clean test Home/native-window screenshot saved via Computer Use for documentation at docs/screenshots/windows-home.jpg (stock test apps, no account/private content); docs/SCREENSHOTS and README provide exact kernel/settings and manual-unlock caveat. Firmware, network captures and diagnostics remain excluded. TODO physical typing/paste modifier cleanup and documented screenshot complete; active-press focus-loss cleanup remains separate pending item.
+- Current budget at last snapshot76% used/24% remaining; continue meaningful TODO work and stop/checkpoint at97-99% used as requested.
+
+---
 ## Four-core startup retry needed - 2026-10-21 05:26 WIB
 
 - Current GUI3419/window1246684, QEMU1064 run20261021-052131-435300, kernel0094 verified SHA7604042b608b242b6f7cd400bb8aad6f1e68f2415987a21c510a443e944b56f6,4CPU/4096MiB/target60. Auto wake worked and first automatic swipe was acknowledged, but lock remained visible through05:26. Manual sidebar Home sent at05:26 to continue tests; do not claim this four-core boot auto-unlocked.

@@ -1,44 +1,51 @@
 # Development status
 
-Snapshot: 2026-10-20, dev/window-native.
+Snapshot: 2026-10-21, dev/window-native.
 
-**Checklist completion: 41/62 (66.1%).** Counted from
-top-level checkboxes in [TODO.md](../TODO.md). Every item has equal weight;
-this percentage is bookkeeping, not a measure of iOS compatibility, stability
-or release readiness. Deferred work remains in the denominator.
+**Checklist completion: 50/70 (71.4%).** Counted from the top-level checkboxes
+in [TODO.md](../TODO.md). Items have equal weight; this is bookkeeping, not a
+compatibility score or release-readiness measure. Deferred work remains counted.
 
 ## Verified
 
-- Native Windows QEMU execution of real Apple userspace and interactive home.
-- Touch, consumer Home/Power/Volume path, on-screen keyboard.
-- Unavailable Photos widget placeholders removed with guest IconState backup;
-  clean Home visually verified. Settings displayed normally after launch wait.
-- Host-current RTC; 2/4-core kernel smoke and four-core real home.
-- Virtio root disk and persistent overlay lock.
-- IPv6 DNS, remote TCP/TLS, example.com HTTP200 and decoded HTML receipt.
-- Kernel0090 DHCP assigns10.0.2.15 and default route via10.0.2.2.
-- Desktop regression suite: 33 tests pass, including immediate Stop clearing,
-  keyboard capability guard, theme palette and topology through eight cores.
+- Real iOS 16.7.16 SpringBoard and interactive Home on native Windows QEMU.
+- Touch/drag scroll, side buttons, on-screen keyboard, physical PC typing and
+  Backspace. Host ASCII clipboard paste produced `Ab9!`; the following physical
+  E produced lowercase e, confirming modifier release for that paste.
+- Dark spinner/buttons, resource dropdowns, compact status bar and native theme
+  controls. Current GUI cap is four CPUs: the PC kernel rejects higher counts.
+- Kernel0092 presentation metadata skips unchanged/in-flight frame exports.
+  Host capture and guest presentation diagnostics are separate. A static screen
+  can show 0 capture FPS. This is not GPU acceleration or a guaranteed motion gain.
+- Two-core kernel0093 boot reached Home without manual Home/Power. After a
+  roughly 107-second pause, UTC lag fell from107 seconds to about1 second on
+  resume; the visible clock subsequently caught up and Settings remained usable.
+- Four-core real Home; unavailable Photos widget placeholders removed. Settings
+  rendered complete pages and actual mouse drags scrolled them after launch wait.
+- Host UTC RTC, virtio disk/persistent-overlay lock, IPv6 DNS/TLS/HTTP receipt,
+  and kernel0090 IPv4 DHCP/default route (10.0.2.15 via10.0.2.2).
+- Pinned requirements installed in a local Python3.12 venv; pip check and50 host
+  tests pass. Clean Windows CI39505871568 passed48 tests at7f4e079; newer source
+  includes additional resource-limit and unlock-retry tests.
+- [Actual Windows/Home screenshot and its limitations](SCREENSHOTS.md).
 
 ## In progress
 
-- Kernel0091 USB HID keyboard:
-  [CI39431335383](https://github.com/MRHRTZ/ios-emulator/actions/runs/39431335383)
-  succeeded. Physical PC e and Return visibly reached Safari. Full held-key
-  runtime cleanup and the new ASCII text-packet path still need verification.
-- Revised native UI being visually checked in Light/Dark modes.
-- Safari software-drawing preference experiment has backups; white webpage
-  content remains unresolved. Actual HTML receipt does not prove rendering.
+- Bounded automatic-unlock retry on four-core fresh boot. The first0094 run
+  still needed manual Home; the new retry source needs runtime validation.
+- Four-core pause/RTC validation and kernel0094 orderly shutdown, followed by
+  a read-only filesystem check. Successful compilation alone is not completion.
+- Default wallpaper through the actual guest PosterBoard path; no host overlay.
+- Motion latency under different capture targets and host/guest workload.
 
-## Not yet working or validated
+## Still missing or deferred
 
-Safari webpage drawing; occasional Settings black content; default wallpaper;
-guest GPU acceleration; 5–8-core runtime stability;
-pause-time RTC behavior; orderly guest shutdown; IME text; general app support.
-Native APFS preparation and installer/bundle are deferred.
+Safari page drawing is unresolved and testing is deferred by the user. Some
+Settings launches are delayed or initially black. Default wallpaper, guest GPU
+acceleration, non-ASCII IME, held-key focus-loss runtime testing and general app
+compatibility remain incomplete. More than four QEMU CPUs are not exposed by
+this GUI. Native APFS preparation and application packaging remain deferred.
 
-See [architecture](ARCHITECTURE.md), [graphics plan](GRAPHICS.md) and
-[engineering evidence/checkpoint](../NOTES.md) for details.
-
-See [Safari rendering investigation](SAFARI_RENDERING.md) for evidence,
-upstream reports and reversible preference experiments.
+See [architecture](ARCHITECTURE.md), [graphics plan](GRAPHICS.md),
+[Safari investigation](SAFARI_RENDERING.md) and [engineering handoff](../NOTES.md)
+for evidence and open work.

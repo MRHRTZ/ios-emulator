@@ -105,11 +105,12 @@ must report missing prerequisites honestly, never label the test PID 1 as iOS.
 - [x] Host-aware CPU/RAM/refresh settings within guest limits.
 - [x] Remove extra full frame-interval delay after framebuffer export.
 - [ ] Runtime-verify automatic Home after each fresh boot.
-- [ ] Runtime-verify kernel0091 physical keyboard input and held-key cleanup.
+- [x] Runtime-verify kernel0091+ physical typing, Backspace and modifier cleanup after ASCII paste.
+- [ ] Runtime-verify focus-loss cleanup while a physical key is actively held.
 - [ ] Diagnose Settings black content and wallpaper.
 - [x] Identify/remove unavailable Photos widget placeholders; clean Home visually verified.
 - [ ] Install and verify a default wallpaper through the guest's wallpaper path.
-- [ ] Add actual UI/guest screenshots to documentation.
+- [x] Add actual native UI/guest Home screenshot with kernel/settings evidence to documentation.
 
 ## 2026-10-21 follow-up
 

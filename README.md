@@ -26,6 +26,10 @@ See [development status and checklist progress](docs/STATUS.md) for evidence
 and pending checks. A booting kernel or a successful download is not a complete
 iPhone implementation.
 
+<img src="docs/screenshots/windows-home.jpg" width="330" alt="Actual native Windows emulator showing the iOS Home screen">
+
+[Screenshot context and limitations](docs/SCREENSHOTS.md).
+
 ## Start on Windows
 
 ```powershell
