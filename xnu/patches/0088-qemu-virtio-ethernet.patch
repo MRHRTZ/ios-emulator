@@ -1,0 +1,92 @@
+--- a/bsd/dev/sweet_virtnet.c
++++ b/bsd/dev/sweet_virtnet.c
+@@ -27,6 +27,7 @@
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern ppnum_t pmap_find_phys(pmap_t, addr64_t);
++extern void thread_terminate_self(void);
+ extern void sweet_pc_network_publish(const uint8_t *);
+ void sweet_virtnet_init(void);
+ #define VN_N 64u
+@@ -170,7 +171,7 @@
+         thread_block(THREAD_CONTINUE_NULL);
+     }
+     dlil_post_msg(vn.ifp, KEV_DL_SUBCLASS, KEV_DL_LINK_OFF, NULL, 0, FALSE);
+-    thread_terminate(current_thread());
++    thread_terminate_self();
+ }
+ void sweet_virtnet_init(void) {
+     DTEntry node; const uintptr_t *reg; unsigned size;
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -106,6 +106,7 @@
+ bsd/dev/memdev.c			standard
+ bsd/dev/sweet_ufs.c			standard
+ bsd/dev/sweet_virtio.c			standard
++bsd/dev/sweet_virtnet.c			standard
+ bsd/dev/sweet_sample.c			standard
+ bsd/dev/sweet_keys.c			standard
+ bsd/dev/sweet_touch.c			standard
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -799,6 +799,10 @@
+ 
+ 	bsd_init_kprintf("calling bsd_autoconf\n");
+ 	bsd_autoconf();
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	extern void sweet_virtnet_init(void);
++	sweet_virtnet_init();
++#endif
+ 
+ #if CONFIG_DTRACE
+ 	dtrace_postinit();
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -79,4 +79,47 @@
+  * "compatible" string and "model" (D22AP / iPhone10,3 in the ADT), which
+  * is what the iPhone userland (MobileGestalt) expects.
+  */
++/* Registry identity for configd. Packet I/O lives in sweet_virtnet.c, with
++ * no dependency on the closed IONetworkingFamily binary. These services are
++ * built-in and never unloaded, like the other SWEET IOKit stand-ins. */
++class IONetworkController : public IOService { OSDeclareDefaultStructors(IONetworkController); };
++class IOEthernetController : public IONetworkController { OSDeclareDefaultStructors(IOEthernetController); };
++class IONetworkInterface : public IOService { OSDeclareDefaultStructors(IONetworkInterface); };
++class IOEthernetInterface : public IONetworkInterface { OSDeclareDefaultStructors(IOEthernetInterface); };
++OSDefineMetaClassAndStructors(IONetworkController, IOService);
++OSDefineMetaClassAndStructors(IOEthernetController, IONetworkController);
++OSDefineMetaClassAndStructors(IONetworkInterface, IOService);
++OSDefineMetaClassAndStructors(IOEthernetInterface, IONetworkInterface);
++
++extern "C" void sweet_pc_network_publish(const uint8_t *mac)
++{
++    IOService *provider = IOService::getPlatform();
++    IOEthernetController *controller = new IOEthernetController;
++    if (!controller || !controller->init() || !controller->attach(provider) || !controller->start(provider)) {
++        IOLog("SWEET VNET: cannot publish Ethernet controller\n"); return;
++    }
++    controller->setName("QEMU Virtio Ethernet");
++    controller->setProperty("IOMACAddress", const_cast<uint8_t *>(mac), 6);
++    controller->setProperty("SelfNamed", kOSBooleanTrue);
++    controller->setProperty("IOBuiltin", kOSBooleanTrue);
++    controller->setProperty("IOModel", "Virtio Ethernet");
++    controller->setProperty("IOVendor", "QEMU");
++    controller->registerService();
++    IOEthernetInterface *interface = new IOEthernetInterface;
++    if (!interface || !interface->init() || !interface->attach(controller) || !interface->start(controller)) {
++        IOLog("SWEET VNET: cannot publish Ethernet interface\n"); return;
++    }
++    interface->setName("en0");
++    interface->setProperty("BSD Name", "en0");
++    interface->setProperty("IOInterfaceNamePrefix", "en");
++    interface->setProperty("IOInterfaceUnit", (unsigned long long)0, 32);
++    interface->setProperty("IOInterfaceType", (unsigned long long)6, 32);
++    interface->setProperty("IOInterfaceState", (unsigned long long)2, 32);
++    interface->setProperty("IOPrimaryInterface", kOSBooleanTrue);
++    interface->setProperty("IOBuiltin", kOSBooleanTrue);
++    interface->setProperty("IOMACAddress", const_cast<uint8_t *>(mac), 6);
++    interface->registerService();
++    IOLog("SWEET VNET: IOKit Ethernet identity en0 published\n");
++}
++
+ #endif /* SWEET */
