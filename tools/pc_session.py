@@ -16,6 +16,7 @@ import time
 from pc_platform import multicore_boot_args
 
 FB_ADDRESS, FB_WIDTH, FB_HEIGHT = 0x9c000000, 1080, 2400
+VIDEO_MAGIC = 0x56494431
 INPUT_ADDRESS, INPUT_MAGIC, INPUT_SLOTS = 0x9e000000, 0x4e495753, 64
 
 
@@ -113,6 +114,9 @@ class PcSession:
         self.held_inputs = {}
         self.frame_directory = None
         self.frame_export_ms = 0.
+        self.last_video_frame = None
+        self.video_metadata = None
+        self.frame_skips = 0
 
     def start(self):
         import adt
@@ -248,7 +252,8 @@ class PcSession:
             self.last_status = time.monotonic()
             status = {'pid': self.process.pid, 'stage': self.stage, 'input_ready': self.input_ready,
                       'header': self.header, 'updated_at': time.time(), 'output': str(self.out),
-                      'frame_export_ms': round(self.frame_export_ms, 2)}
+                      'frame_export_ms': round(self.frame_export_ms, 2),
+                      'video_metadata': self.video_metadata, 'unchanged_frame_skips': self.frame_skips}
             path = self.out/'live.json'
             temporary = path.with_suffix('.tmp')
             try:
@@ -266,6 +271,20 @@ class PcSession:
         return delta
 
     def frame(self):
+        # Kernel 0092 publishes video metadata in reserved protocol-v1 words.
+        # Old kernels keep these zero and retain the existing capture path.
+        video = None
+        if self.qtest is not None:
+            fields = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS + 32, 32))
+            if fields[0] == VIDEO_MAGIC:
+                _, sequence, counter, copy_us, width, height, stride, _ = fields
+                if (width, height, stride) != (FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4):
+                    raise RuntimeError('Guest video metadata does not match the framebuffer geometry.')
+                self.video_metadata = dict(sequence=sequence, frames=counter, copy_us=copy_us)
+                if sequence & 1 or counter == self.last_video_frame:
+                    self.frame_skips += 1
+                    return None
+                video = counter
         # Binary QMP export is ~3x faster than base64 qtest on this Windows host.
         # The temporary file stays in the Windows cache when memory permits.
         # Keep high-frequency frame writes on the host temporary volume, not
@@ -285,6 +304,7 @@ class PcSession:
         if len(data) != size:
             raise RuntimeError('QEMU framebuffer could not be read completely.')
         self.frame_export_ms = (time.perf_counter()-started)*1000
+        self.last_video_frame = video
         return data
 
     def input(self, kind, code, down, x=0, y=0):

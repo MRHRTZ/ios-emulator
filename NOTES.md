@@ -1,3 +1,12 @@
+## Frame metadata work in progress — 2026-10-21
+
+- User requests continued TODO work until 1–3% five-hour allowance remains; Safari tests deferred. Initial allowance remaining 97%. Computer Use authorized.
+- Native Windows settings verified readable with three dropdowns, OK/Cancel and corrected power glyph. GUI exec session69376/window459742, active QEMU19720 run20261021-044302-615800, kernel0091,4CPU/4096MiB/60 target. Still black at startup after automatic wake attempts; no automatic unlock success claimed. Avoid interrupting until recording live status/actual screenshot.
+- New kernel patch0092 publishes completed frame counter, odd/even copy sequence, copy time and geometry in reserved input header words8..15 (event ring unchanged at+64), ONLY on QEMU's sweet-pc-input ADT path. Magic published after first present; boot console and legacy kernels retain polling. Host skips unchanged/in-flight exports. This is a transport efficiency change, not GPU support or established guest speedup.
+- Local SweetFramebuffer.cpp syntax compile PASS through portable xnu-cc.py. Fixed Windows regex replacement escape and component path matching; LLVM discovery/clang++.exe selection supported. 35 host tests PASS including no-change/inflight suppression and old kernel fallback. Need CI build, checksum verification, runtime compare before marking performance TODO complete.
+- gh portable at data/tools/gh/bin/gh.exe; normal auth config empty. Local ignored data/tools/gh_run.py supplies the existing Git Credential Manager credential as GH_TOKEN only in subprocess environment (never log it). Use python data/tools/gh_run.py for CI.
+
+---
 ## Final push verification 2026-10-21
 
 - dev/window-native implementation commit 5ecac64 pushed; main documentation commit 6ca8d9e pushed and confirmed via ls-remote. Final spinner follow-up uses an explicit painter color because inherited QWidget stylesheet overrides palette text colors.

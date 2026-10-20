@@ -148,10 +148,11 @@ class Worker(QObject):
                     next_poll = now + .25
                 if now >= next_frame and not self.frame_pending.is_set():
                     data = self.session.frame()
-                    image = QImage(data, FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4, QImage.Format.Format_RGB32).copy()
-                    self.frame_pending.set()
-                    self.frame.emit(image)
-                    frames += 1
+                    if data is not None:
+                        image = QImage(data, FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4, QImage.Format.Format_RGB32).copy()
+                        self.frame_pending.set()
+                        self.frame.emit(image)
+                        frames += 1
                     interval = 2. if self.session.stage == 'booting' else (.5 if self.session.stage in ('services', 'springboard') else 1 / self.settings['fps'])
                     next_frame = max(now + interval, time.monotonic())
                 if now - measured >= 2:

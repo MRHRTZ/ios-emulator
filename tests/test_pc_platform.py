@@ -230,3 +230,45 @@ class StartupDisplayTests(unittest.TestCase):
             schedule.assert_called_once()
             self.assertFalse(window.auto_home_pending)
         window.worker=None;window.close()
+
+
+class VideoMetadataTests(unittest.TestCase):
+    def test_unchanged_and_inflight_frames_do_not_export_full_memory(self):
+        from types import SimpleNamespace
+        import tempfile
+        from pathlib import Path
+        from pc_session import VIDEO_MAGIC
+        with tempfile.TemporaryDirectory() as folder:
+            s=PcSession(folder)
+            metadata=[VIDEO_MAGIC,2,1,120,1,1,4,0]
+            s.qtest=SimpleNamespace(read=lambda address,size:struct.pack('<8I',*metadata))
+            exports=[]
+            def export(command,**args):
+                exports.append(command);Path(args['filename']).write_bytes(b'abcd')
+            s.qmp=SimpleNamespace(call=export)
+            with patch('pc_session.FB_WIDTH',1),patch('pc_session.FB_HEIGHT',1):
+                self.assertEqual(s.frame(),b'abcd')
+                self.assertIsNone(s.frame())
+                metadata[1:3]=[3,2]
+                self.assertIsNone(s.frame())
+                metadata[1]=4
+                self.assertEqual(s.frame(),b'abcd')
+            self.assertEqual(exports,['pmemsave','pmemsave'])
+            self.assertEqual(s.frame_skips,2)
+            s.frame_directory.cleanup()
+
+    def test_old_kernel_reserved_words_preserve_capture(self):
+        from types import SimpleNamespace
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            s=PcSession(folder)
+            s.qtest=SimpleNamespace(read=lambda address,size:bytes(32))
+            exports=[]
+            def export(command,**args):
+                exports.append(command);Path(args['filename']).write_bytes(b'abcd')
+            s.qmp=SimpleNamespace(call=export)
+            with patch('pc_session.FB_WIDTH',1),patch('pc_session.FB_HEIGHT',1):
+                self.assertEqual(s.frame(),b'abcd');self.assertEqual(s.frame(),b'abcd')
+            self.assertEqual(len(exports),2)
+            s.frame_directory.cleanup()

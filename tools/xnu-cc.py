@@ -17,12 +17,13 @@ Env: XNU_CC_EXTRA   extra flags (e.g. "-DKPERF -DKPC" for config changes)
      XNU_CC_OBJDIR  emit real objects there instead of a syntax-only check
                     (then: llvm-nm for undefined symbols = link errors)
 """
-import concurrent.futures as cf, os, re, shlex, subprocess, sys
+import concurrent.futures as cf, os, re, shlex, shutil, subprocess, sys
 from collections import Counter
 
 CI_DXB = '/Users/runner/work/ios-sweet/ios-sweet/dxb'
 CI_SDK_PLATFORM = re.compile(r'/Applications/Xcode[^ ]*?\.sdk/+System/Library/Frameworks/Kernel\.framework/Versions/A/PrivateHeaders/platform')
-CLANG = os.path.expanduser('~/swift/usr/bin/clang')
+CLANG = os.environ.get('XNU_CLANG') or (os.path.expanduser('~/swift/usr/bin/clang')
+         if os.path.isfile(os.path.expanduser('~/swift/usr/bin/clang')) else shutil.which('clang'))
 DROP = {'-c', '-g', '-MD', '-MMD'}
 DROP_WITH_ARG = {'-MF', '-MT', '-o', '-arch'}
 COMPONENTS = ('osfmk', 'bsd', 'iokit', 'libkern', 'pexpert', 'security', 'san', 'libsa')
@@ -84,7 +85,7 @@ def component_dirs(bt):
     for root, _, files in os.walk(os.path.join(bt, 'build/xnu.obj')):
         if 'meta_features.h' in files:
             for c in COMPONENTS:
-                if f'/{c}/' in root + '/' and c not in out:
+                if f'/{c}/' in root.replace('\\', '/') + '/' and c not in out:
                     out[c] = root
     return out
 
@@ -93,7 +94,8 @@ def run(item, bt, cdirs):
     src, (kind, args) = item
     objdir = os.environ.get('XNU_CC_OBJDIR')
     mode = ['-c', '-o', os.path.join(objdir, src.replace(CI_DXB + '/xnu/', '').replace('/', '__') + '.o')] if objdir else ['-fsyntax-only']
-    new = [CLANG if kind == 'clang' else CLANG + '++', '-target', 'arm64-apple-macos14.0', *mode,
+    compiler = CLANG if kind == 'clang' else os.path.join(os.path.dirname(CLANG), 'clang++' + ('.exe' if CLANG.endswith('.exe') else ''))
+    new = [compiler, '-target', 'arm64-apple-macos14.0', *mode,
            # Apple clang-only builtins (kalloc_type); values only matter for codegen
            '-D__builtin_xnu_type_signature(...)=""', '-D__builtin_xnu_type_summary(...)=0',
            '-D__builtin_xnu_types_compatible(...)=1'] + os.environ.get('XNU_CC_EXTRA', '').split()
@@ -107,7 +109,7 @@ def run(item, bt, cdirs):
         if a in DROP_WITH_ARG:
             skip = True
             continue
-        a = CI_SDK_PLATFORM.sub(os.path.join(bt, 'sdk-kernel-platform/platform'), a)
+        a = CI_SDK_PLATFORM.sub(lambda _: os.path.join(bt, 'sdk-kernel-platform/platform'), a)
         new.append(a.replace(CI_DXB, bt))
     new += os.environ.get('XNU_CC_POST', '').split()
     comp = next((c for c in COMPONENTS if f'/xnu/{c}/' in src), None) or \
@@ -120,7 +122,10 @@ def run(item, bt, cdirs):
 
 
 def main():
-    log, bt = sys.argv[1], os.path.abspath(sys.argv[2])
+    log, bt = sys.argv[1], os.path.abspath(sys.argv[2]).replace('\\', '/')
+    if not CLANG:
+        print('Clang not found; set XNU_CLANG or install LLVM', file=sys.stderr)
+        return 1
     per_file = '--per-file' in sys.argv
     filters = [a for a in sys.argv[3:] if a != '--per-file']
     cmds = commands(log)

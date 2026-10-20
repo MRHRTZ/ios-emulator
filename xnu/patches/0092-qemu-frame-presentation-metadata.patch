@@ -1,0 +1,98 @@
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -48,6 +48,8 @@
+ #include <IOKit/IOTimerEventSource.h>
+ #include <IOKit/system.h>
+ #include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
++extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ #include <kern/clock.h>
+ #include <sys/proc.h>
+ 
+@@ -104,6 +106,9 @@
+ 	uint32_t      fWidth, fHeight, fRowBytes;
+ 	uint32_t      fLogicalW, fLogicalH;     /* size reported to userland */
+ 	int32_t       fOffX, fOffY;             /* logical origin of the panel */
++	volatile uint32_t *fPCVideo;    /* QEMU-only reserved input-page video header */
++	void beginFrame(void);
++	void endFrame(uint64_t started);
+ 	uintptr_t     fPixels;          /* kernel mapping of the panel memory */
+ 	IOMemoryMap  *fMap;
+ 	SweetSurface *fSurface;         /* the panel memory as an IOSurface */
+@@ -187,6 +192,14 @@
+ 		OSSafeReleaseNULL(fWorkLoop);
+ 		return false;
+ 	}
++	DTEntry pc;
++	const uintptr_t *reg = NULL;
++	unsigned int regSize = 0;
++	if (SecureDTLookupEntry(NULL, "/sweet-pc-input", &pc) == kSuccess &&
++	    SecureDTGetProperty(pc, "reg", (const void **)&reg, &regSize) == kSuccess &&
++	    regSize == 2 * sizeof(uintptr_t) && reg[0] == 0x9e000000 && reg[1] == 0x4000) {
++		fPCVideo = (volatile uint32_t *)ml_io_map(reg[0], reg[1]);
++	}
+ 	fVsync = IOTimerEventSource::timerEventSource(this, &AppleCLCD::vsyncFired);
+ 	if (fVsync == NULL || fWorkLoop->addEventSource(fVsync) != kIOReturnSuccess) {
+ 		IOLog("SWEET FB: no vsync timer\n");
+@@ -204,6 +217,36 @@
+ 	IOLog("SWEET FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u, presented as %ux%u\n",
+ 	    fWidth, fHeight, fRowBytes, fPhys, fSurface->id, fLogicalW, fLogicalH);
+ 	return true;
++}
++
++/* Words 8..15 were reserved by protocol v1; the event ring starts at +64.
++ * Video magic appears only after the first real presentation. Until then the
++ * host keeps polling the boot console. Odd sequence means a copy is in flight.
++ * Neither this mapping nor its stores exists on the phone ADT path. */
++void
++AppleCLCD::beginFrame(void)
++{
++	if (fPCVideo) {
++		fPCVideo[9]++;
++		__asm__ volatile("dmb sy" ::: "memory");
++	}
++}
++
++void
++AppleCLCD::endFrame(uint64_t started)
++{
++	if (fPCVideo) {
++		uint64_t ns = 0;
++		absolutetime_to_nanoseconds(mach_absolute_time() - started, &ns);
++		fPCVideo[10]++;
++		fPCVideo[11] = (uint32_t)(ns / 1000);
++		fPCVideo[12] = fWidth;
++		fPCVideo[13] = fHeight;
++		fPCVideo[14] = fRowBytes;
++		__asm__ volatile("dmb sy" ::: "memory");
++		fPCVideo[9]++;
++		fPCVideo[8] = 0x56494431; /* VID1 */
++	}
+ }
+ 
+ void
+@@ -232,12 +275,14 @@
+ 		}
+ 		IOLockUnlock(fb->fLock);
+ 		if (step <= 6) {
++			fb->beginFrame();
+ 			for (uint32_t y = 0; y < fb->fHeight; y++) {
+ 				volatile uint32_t *row = (volatile uint32_t *)(fb->fPixels + (uint64_t)y * fb->fRowBytes);
+ 				for (uint32_t x = 0; x < fb->fWidth; x++) {
+ 					row[x] = step < 6 ? (row[x] >> 1) & 0x7f7f7f7f : 0;
+ 				}
+ 			}
++			fb->endFrame(now);
+ 		}
+ 		sender->setTimeoutUS(SWEET_FB_VSYNC_US);
+ 		return;
+@@ -253,7 +298,9 @@
+ 	}
+ 	IOLockUnlock(fb->fLock);
+ 	if (rec != NULL) {
++		fb->beginFrame();
+ 		fb->present(rec);
++		fb->endFrame(now);
+ 		IOFreeData(rec, SWEET_FB_SWAP_REC_SIZE);
+ 	}
+ 	sender->setTimeoutUS(SWEET_FB_VSYNC_US);
