@@ -1,0 +1,70 @@
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -361,6 +361,36 @@
+  * app-switcher gesture.
+  */
+ #define SWEET_TOUCH_EDGE_PX 48
++
++/* QEMU host keyboard: USB HID keyboard usages, separate from side buttons. */
++class SweetHIDKeyboard : public IOHIDEventService {
++    OSDeclareDefaultStructors(SweetHIDKeyboard);
++public:
++    bool start(IOService *provider) APPLE_KEXT_OVERRIDE {
++        if (!IOHIDEventService::start(provider)) { return false; }
++        setProperty("Transport", "Virtual");
++        setProperty("Product", "QEMU PC Keyboard");
++        registerService();
++        IOLog("SWEET PC: keyboard registered (USB HID usages)\n");
++        return true;
++    }
++    void key(UInt32 usage, bool down) {
++        if (usage < 4 || usage > 231 || held[usage] == down) { return; }
++        held[usage] = down;
++        IOHIDEvent *event = IOHIDEvent::keyboardEvent(mach_absolute_time(), kHIDPage_KeyboardOrKeypad, usage, down);
++        if (event) { dispatchEvent(event); event->release(); }
++    }
++    void releaseKeys() { for (UInt32 i = 4; i <= 231; i++) { if (held[i]) { key(i, false); } } }
++protected:
++    UInt32 getPrimaryUsagePage() APPLE_KEXT_OVERRIDE { return kHIDPage_GenericDesktop; }
++    UInt32 getPrimaryUsage() APPLE_KEXT_OVERRIDE { return kHIDUsage_GD_Keyboard; }
++private:
++    bool held[256] = {};
++};
++OSDefineMetaClassAndStructors(SweetHIDKeyboard, IOHIDEventService);
++static SweetHIDKeyboard *gSweetKeyboard;
++extern "C" int sweet_pc_keyboard_supported(void) { return 1; }
++
+ class SweetHIDTouch : public IOHIDEventService {
+ 	OSDeclareDefaultStructors(SweetHIDTouch);
+ public:
+@@ -465,7 +495,12 @@
+ 			for (unsigned int i = 0; i < 16; i++) { fPCInput[i] = 0; }
+ 			fPCPoll = IOTimerEventSource::timerEventSource(this, &SweetHIDTouch::pcInputFired);
+ 			if (fPCPoll && _hidWorkLoop->addEventSource(fPCPoll) == kIOReturnSuccess) {
+-				fPCInput[1] = 1;
++				gSweetKeyboard = OSTypeAlloc(SweetHIDKeyboard);
++                if (gSweetKeyboard && gSweetKeyboard->init() && gSweetKeyboard->attach(provider)) {
++                    if (!gSweetKeyboard->start(provider)) { gSweetKeyboard->detach(provider); OSSafeReleaseNULL(gSweetKeyboard); }
++                } else { OSSafeReleaseNULL(gSweetKeyboard); }
++                fPCInput[7] = gSweetKeyboard ? 1 : 0;
++                fPCInput[1] = 1;
+ 				__asm__ volatile("dmb sy" ::: "memory");
+ 				fPCInput[0] = 0x4e495753; /* SWIN, protocol v1 */
+ 				fPCPoll->setTimeoutMS(10);
+@@ -604,6 +639,7 @@
+ 		/* Invalid producer state: reset all contacts instead of leaving a drag held. */
+ 		for (int i = 0; i < 10; i++) { self->touch(i, false, 0, 0); }
+ 		for (int i = 0; i < 4; i++) { sweet_hid_key(i, 0); }
++		if (gSweetKeyboard) { gSweetKeyboard->releaseKeys(); }
+ 		tail = head;
+ 	}
+ 	for (unsigned int count = 0; tail != head && count < 64; count++) {
+@@ -614,6 +650,8 @@
+ 			self->touch((int)code, down != 0, (int)event[4], (int)event[5]);
+ 		} else if (kind == 2 && code < 4 && down <= 1) {
+ 			sweet_hid_key((int)code, (int)down);
++        } else if (kind == 3 && code >= 4 && code <= 231 && down <= 1 && gSweetKeyboard) {
++            gSweetKeyboard->key(code, down != 0);
+ 		}
+ 		page[4]++;
+ 		page[5] = kind;
