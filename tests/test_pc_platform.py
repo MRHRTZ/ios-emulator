@@ -340,3 +340,26 @@ class ResumeCalendarTests(unittest.TestCase):
     def test_clock_resume_does_not_overwrite_full_ring(self):
         s=PcSession('.');s.qtest=MemoryChannel(64,0)
         self.assertFalse(s.resume_calendar());self.assertFalse(s.qtest.events)
+
+
+class StartupTimerTests(unittest.TestCase):
+    def test_console_is_not_unlock_ready_and_idle_timer_can_wake(self):
+        from emulator_gui import Window
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QImage,QColor,QPainter
+        from types import SimpleNamespace
+        app=QApplication.instance() or QApplication([])
+        window=Window(auto_start=False);window.worker=SimpleNamespace();window.stage='display'
+        image=QImage(1080,2400,QImage.Format.Format_RGB32);image.fill(QColor('black'))
+        painter=QPainter(image)
+        for y in range(20,2400,35):painter.fillRect(20,y,900,6,QColor('white'))
+        painter.end()
+        with patch('emulator_gui.QTimer.singleShot') as schedule,patch.object(window,'key_click') as key:
+            window.new_frame(image)
+            schedule.assert_not_called();self.assertTrue(window.auto_home_pending)
+            image.fill(QColor('black'));window.new_frame(image)
+            key.assert_called_once_with(0)
+            with patch('emulator_gui.time.monotonic',return_value=window.startup_last_wake+31):
+                window.check_startup()
+            self.assertEqual(key.call_count,2)
+        window.worker=None;window.close()

@@ -1,3 +1,11 @@
+## Startup transport interaction — 2026-10-21
+
+- Kernel0092 current GUI session15988/window1772382, QEMU13524 run20261021-050001-370700,4CPU/4096MiB/target60. At metadata frames25/sequence50, host skipped4090 unchanged exports. Transport works; do not confuse static0 FPS with a stalled guest. Manual Home was needed to wake current startup; auto-unlock not verified.
+- Found startup readiness could match dense monochrome boot console, prematurely clearing auto_home_pending; unchanged-frame transport also stops new_frame-driven wake retries. Fixed dense-console exclusion plus a1sec Qt startup check timer independent of frame arrivals. Test verifies console rejection and repeated wake without a new frame.45 tests PASS; needs GUI reload/fresh runtime.
+- Source inspection: SweetCPU.cpp QEMU topology guard requires phys_id<4 and num_cpus<=4. Previous GUI8CPU/5–8 experimental label was inaccurate and could select a known panic. GUI now caps4; CLI/tree experimental topology remains separate. Documentation updated; kernel phone topology unchanged.
+- Kernel0093 CI39504669301 is running. No0094 patch pushed while it builds. Clean Windows CI39504340072 already passed42 tests.
+
+---
 ## Clock resume / Windows CI milestone — 2026-10-21
 
 - Clean Windows host CI39504340072 SUCCESS at source f479b60: pinned dependency install, pip check and42 host/Qt tests. TODO clean Windows host setup test complete, not a complete clean machine guest boot test.

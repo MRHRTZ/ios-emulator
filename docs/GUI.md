@@ -4,7 +4,7 @@ From the repository root, with the already prepared iOS root and matching local
 kernel (0084+ for input, 0085+ for live serial, 0087+ for multicore/RTC):
 
 ```powershell
-python -m pip install PySide6
+python -m pip install -r requirements.txt
 python emulator.py gui
 ```
 
@@ -18,6 +18,8 @@ the iOS on-screen keyboard. Kernel 0091 adds PC keyboard capture: click the
 iOS display to focus it, and toggle the keyboard sidebar button. Focus loss,
 Pause and Stop release held keys. Current mapping covers a US physical layout;
 Windows printable ASCII text packets are converted to US-layout HID strokes.
+Ctrl+V pastes up to 4096 printable ASCII characters from the host clipboard;
+non-ASCII or oversized pastes show a status message without partial insertion.
 IME/composed non-ASCII text is not implemented.
 
 | Control | Shortcut |
@@ -83,3 +85,17 @@ avoiding an input during the initial black/Apple boot frame.
 
 The loading spinner sits left of the status text with padding; the FPS field
 has no separator. See [Safari rendering investigation](SAFARI_RENDERING.md).
+
+
+## Display transport and pause
+
+Kernel0092 publishes completed frame counters and copy timing in reserved input
+protocol words. The host skips unchanged or in-flight frames. Older kernels
+retain periodic framebuffer export. The FPS label counts host exports, not
+guest animation updates or GPU performance; a static screen may show 0 FPS.
+Paused sessions do not export frames and show 0 FPS.
+
+Kernel0093 adds a capability-gated resume event that refreshes the guest calendar
+from QEMU's host RTC. `live.json` includes guest UTC seconds, calendar lag and
+any acknowledgment warning. Runtime validation is recorded in NOTES.md; the
+presence of this capability alone is not proof of a successful clock test.

@@ -373,7 +373,7 @@ def host_limits():
         total=os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES')//1048576
     # Reserve host RAM and QEMU's low-address region; guest ABI currently validated to 4 GiB.
     budget=max(1024, int(total*.8)-1792)
-    cores=max(1,min(8, int((os.cpu_count() or 1)*.8)))
+    cores=max(1,min(4, int((os.cpu_count() or 1)*.8)))
     screen=QApplication.primaryScreen()
     return {'host_mib':total,'budget_mib':budget,'memory_mib':min(4096,budget)//256*256,
             'cpu_count':cores,'fps':max(30,min(240,round(screen.refreshRate()) if screen else 60))}
@@ -401,6 +401,10 @@ class Window(QMainWindow):
         self.setMinimumSize(540, 600)
         self.resize(650, min(980, QApplication.primaryScreen().availableGeometry().height() - 60))
         self.worker = None
+        self.startup_timer=QTimer(self)
+        self.startup_timer.setInterval(1000)
+        self.startup_timer.timeout.connect(self.check_startup)
+        self.startup_timer.start()
         self.paused = False
         self.restarting = False
         self.kernel, self.overlay = kernel, overlay
@@ -684,7 +688,16 @@ class Window(QMainWindow):
         if self.worker and hasattr(self.worker, 'frame_pending'):
             self.worker.frame_pending.clear()
         if self.stopping or not self.worker: return
-        if self.auto_home_pending and self.stage=='display':
+        self.screen.image = image
+        self.screen.update()
+        self.check_startup()
+
+    def check_startup(self):
+        # Run from a timer too: unchanged-frame suppression must not suppress
+        # startup wake attempts when the framebuffer stays black.
+        if not self.worker or self.stopping or self.screen.image.isNull(): return
+        image=self.screen.image
+        if self.auto_home_pending and self.stage=='display' and not self.paused:
             now=time.monotonic()
             if self.startup_display_at is None:self.startup_display_at=now
             bright=top_bright=colorful=0
@@ -696,7 +709,8 @@ class Window(QMainWindow):
                     if y<image.height()//3:
                         top_bright+=lit
                         colorful+=max(c.red(),c.green(),c.blue())-min(c.red(),c.green(),c.blue())>30
-            if colorful>=8 or top_bright>=8:
+            # Dense monochrome boot-console text is not the lock screen.
+            if colorful>=8 or (top_bright>=8 and bright<250):
                 self.auto_home_pending=False
                 self.append_log('Startup: lock/home frame detected; scheduling unlock swipe.')
                 QTimer.singleShot(2500,self.go_home)
@@ -706,8 +720,6 @@ class Window(QMainWindow):
                 self.startup_wake_count+=1;self.startup_last_wake=now
                 self.append_log(f'Startup: display asleep; waking it ({self.startup_wake_count}/12).')
                 self.key_click(0)
-        self.screen.image = image
-        self.screen.update()
 
     def append_log(self, text):
         self.logs.appendPlainText(text.rstrip())
