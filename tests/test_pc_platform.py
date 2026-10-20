@@ -246,13 +246,16 @@ class VideoMetadataTests(unittest.TestCase):
             def export(command,**args):
                 exports.append(command);Path(args['filename']).write_bytes(b'abcd')
             s.qmp=SimpleNamespace(call=export)
-            with patch('pc_session.FB_WIDTH',1),patch('pc_session.FB_HEIGHT',1):
+            with patch('pc_session.FB_WIDTH',1),patch('pc_session.FB_HEIGHT',1),patch('pc_session.time.monotonic',return_value=0) as stamp:
                 self.assertEqual(s.frame(),b'abcd')
                 self.assertIsNone(s.frame())
                 metadata[1:3]=[3,2]
                 self.assertIsNone(s.frame())
                 metadata[1]=4
+                stamp.return_value=2
                 self.assertEqual(s.frame(),b'abcd')
+                self.assertEqual(s.guest_present_fps,.5)
+                self.assertEqual(s.exported_frames,2)
             self.assertEqual(exports,['pmemsave','pmemsave'])
             self.assertEqual(s.frame_skips,2)
             s.frame_directory.cleanup()

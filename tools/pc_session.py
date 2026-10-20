@@ -120,6 +120,9 @@ class PcSession:
         self.guest_calendar_unix = None
         self.clock_resume_warning = None
         self.shutdown_requested = False
+        self.guest_present_fps = None
+        self.video_rate_sample = None
+        self.exported_frames = 0
 
     def start(self):
         import adt
@@ -278,6 +281,9 @@ class PcSession:
                       'header': self.header, 'updated_at': time.time(), 'output': str(self.out),
                       'frame_export_ms': round(self.frame_export_ms, 2),
                       'video_metadata': self.video_metadata, 'unchanged_frame_skips': self.frame_skips,
+                      'guest_present_fps': self.guest_present_fps, 'exported_frames': self.exported_frames,
+                      'held_input_count': len(self.held_inputs),
+                      'input_backlog': (self.header[2]-self.header[3]) & 0xffffffff,
                       'guest_calendar_unix': self.guest_calendar_unix,
                       'calendar_lag_seconds': round(time.time()-self.guest_calendar_unix, 2) if self.guest_calendar_unix else None,
                       'clock_resume_warning': self.clock_resume_warning, 'shutdown_requested': self.shutdown_requested}
@@ -308,6 +314,14 @@ class PcSession:
                 if (width, height, stride) != (FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4):
                     raise RuntimeError('Guest video metadata does not match the framebuffer geometry.')
                 self.video_metadata = dict(sequence=sequence, frames=counter, copy_us=copy_us)
+                if not sequence & 1:
+                    stamp=time.monotonic()
+                    if self.video_rate_sample is None:
+                        self.video_rate_sample=(stamp,counter)
+                    elif stamp-self.video_rate_sample[0]>=2:
+                        since,previous=self.video_rate_sample
+                        self.guest_present_fps=round(((counter-previous)&0xffffffff)/(stamp-since),2)
+                        self.video_rate_sample=(stamp,counter)
                 if sequence & 1 or counter == self.last_video_frame:
                     self.frame_skips += 1
                     return None
@@ -332,6 +346,7 @@ class PcSession:
             raise RuntimeError('QEMU framebuffer could not be read completely.')
         self.frame_export_ms = (time.perf_counter()-started)*1000
         self.last_video_frame = video
+        self.exported_frames += 1
         return data
 
     def input(self, kind, code, down, x=0, y=0):
@@ -376,6 +391,8 @@ class PcSession:
     def pause(self, paused):
         if paused and self.input_ready:
             self.release_inputs()
+        self.video_rate_sample = None
+        self.guest_present_fps = 0. if paused else None
         self.qmp.call('stop' if paused else 'cont')
         if not paused and self.input_ready and self.header and self.header[7] & 2:
             self.clock_resume_warning = None

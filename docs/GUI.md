@@ -36,8 +36,8 @@ IME/composed non-ASCII text is not implemented.
 | Restart | F5 |
 
 Stop the emulator before changing CPU, RAM, or refresh target. Resource limits
-follow host capacity (80% budget) and the guest cap: 4 GiB RAM / 8 CPUs.
-5–8 CPUs are experimental; refresh targets are limited by the host display. ARM64 runs through TCG on x64; actual speed and FPS depend on host
+follow host capacity (80% budget) and the guest cap: 4 GiB RAM / 4 CPUs.
+The current kernel PC topology check rejects more than four CPUs; refresh targets are limited by the host display. ARM64 runs through TCG on x64; actual speed and FPS depend on host
 load. Selecting more cores does not guarantee proportional speed increases.
 The CPU, device tree and boot arguments are configured together.
 
@@ -99,3 +99,16 @@ Kernel0093 adds a capability-gated resume event that refreshes the guest calenda
 from QEMU's host RTC. `live.json` includes guest UTC seconds, calendar lag and
 any acknowledgment warning. Runtime validation is recorded in NOTES.md; the
 presence of this capability alone is not proof of a successful clock test.
+
+Hover over the FPS value for the capture target, newly captured frames, guest
+presentation rate (kernel0092+), and last frame-export time. Diagnostics also
+include exported frame totals, skipped unchanged frames, held-input count and
+ring backlog. A presentation is a completed guest framebuffer copy, not a GPU
+benchmark or proof of unique animated content.
+
+Kernel0094 introduces **Emulator > Shut Down iOS**, enabled only when the guest
+advertises support. XNU stops processes, syncs and unmounts filesystems before
+QEMU's PSCI power off. The GUI waits for a successful exit and platform-halt log;
+implementation availability does not replace runtime/filesystem verification.
+**Force Stop** remains a power cut. If orderly shutdown takes more than two
+minutes, the GUI leaves the session available for diagnostics or Force Stop.

@@ -788,6 +788,15 @@ class Window(QMainWindow):
         self.show_status_message(messages.get(stage, stage))
         self.progress.setVisible(stage in ('starting', 'booting', 'services', 'springboard', 'shutting-down') or (stage=='display' and self.auto_home_pending))
         self.fps_label.setText(f'{fps:.1f} fps' if active else '')
+        session=self.worker.session if self.worker else None
+        if session:
+            guest_rate=getattr(session,'guest_present_fps',None)
+            guest_text=f'{guest_rate:.1f} fps' if guest_rate is not None else 'unavailable'
+            self.fps_label.setToolTip(
+                f"Capture target: {self.settings['fps']} fps\nNew frames captured: {fps:.1f} fps\n"
+                f"Guest presentations: {guest_text}\n"
+                f"Frame export: {getattr(session,'frame_export_ms',0.):.1f} ms\n"
+                'Unchanged frames are skipped; a still screen may show 0 fps.')
 
     def pause(self):
         if self.worker:
@@ -916,7 +925,7 @@ class Window(QMainWindow):
         form.addRow('Display refresh target:',rate)
         note=QLabel(f"Host: {limits['host_mib']/1024:.1f} GiB RAM, {os.cpu_count()} logical CPUs.\n"
             f"Host RAM budget: 80% (QEMU overhead reserved).\n"
-            f"Current guest limit: 4 GiB RAM / 8 CPUs; 5–8 CPUs experimental.\n"
+            f"Current QEMU guest limit: 4 GiB RAM / 4 CPUs.\n"
             "A higher refresh target does not guarantee faster guest rendering.\n"
             "Graphics: Software. Vulkan / OpenGL guest acceleration is under development.")
         note.setWordWrap(True);form.addRow(note)
