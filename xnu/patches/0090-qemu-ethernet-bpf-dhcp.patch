@@ -1,0 +1,38 @@
+--- a/bsd/dev/sweet_virtnet.c
++++ b/bsd/dev/sweet_virtnet.c
+@@ -16,6 +16,7 @@
+ #include <vm/vm_kern.h>
+ #include <pexpert/device_tree.h>
+ #include <net/if.h>
++#include <net/bpf.h>
+ #include <net/if_types.h>
+ #include <net/ethernet.h>
+ #include <net/if_ether.h>
+@@ -88,6 +89,7 @@
+     desc(1)[id] = (struct vn_desc){vn.pa + offset, (uint32_t)len + VN_HDR, 0, 0};
+     vn.busy[id] = true; post(1, id); vw(0x50, 1); vn.tx++;
+     lck_mtx_unlock(&vn_lock);
++    bpf_tap_out(ifp, DLT_EN10MB, m, NULL, 0);
+     mbuf_freem(m); ifnet_stat_increment_out(ifp, 1, len, 0); return 0;
+ drop:
+     vn.drops++; lck_mtx_unlock(&vn_lock);
+@@ -161,6 +163,10 @@
+         for (unsigned i = 0; i < count; i++) {
+             struct ifnet_stat_increment_param stats = {};
+             stats.packets_in = 1; stats.bytes_in = mbuf_pkthdr_len(packets[i]) + ETHER_HDR_LEN;
++            /* DHCP reads link-layer packets through BPF before an IPv4 address
++             * exists. Tap outside vn_lock; the mbuf's Ethernet header remains
++             * valid in its cluster, immediately preceding the payload. */
++            bpf_tap_in(vn.ifp, DLT_EN10MB, packets[i], mbuf_pkthdr_header(packets[i]), ETHER_HDR_LEN);
+             ifnet_input(vn.ifp, packets[i], &stats);
+         }
+         (void)bytes;
+@@ -219,6 +225,8 @@
+     ifnet_set_mtu(vn.ifp, ETHERMTU); ifnet_set_baudrate(vn.ifp, 1000000000);
+     ifnet_set_flags(vn.ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST, 0xffff);
+     if (ifnet_attach(vn.ifp, NULL)) { ifnet_release(vn.ifp); vn.ifp = NULL; fail(); return; }
++    bpfattach(vn.ifp, DLT_EN10MB, ETHER_HDR_LEN);
++    ifnet_set_link_quality(vn.ifp, IFNET_LQM_THRESH_GOOD);
+     ifnet_set_lladdr(vn.ifp, vn.mac, 6); (void)proto_plumb(PF_INET, vn.ifp);
+     ifnet_set_flags(vn.ifp, IFF_UP | IFF_RUNNING, IFF_UP | IFF_RUNNING);
+     barrier(); vw(0x70, 15); vw(0x50, 0);
