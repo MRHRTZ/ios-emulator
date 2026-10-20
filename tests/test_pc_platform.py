@@ -187,6 +187,9 @@ class StartupDisplayTests(unittest.TestCase):
         image=QImage(1080,2400,QImage.Format.Format_RGB32);image.fill(QColor('black'))
         painter=QPainter(image);painter.fillRect(400,1000,280,300,QColor('white'));painter.end()
         with patch.object(window,'key_click') as key,patch('emulator_gui.QTimer.singleShot') as schedule:
+            black=QImage(image);black.fill(QColor('black'))
+            window.startup_display_at=-1000
+            window.new_frame(black);key.assert_not_called()
             window.new_frame(image)
             key.assert_not_called();schedule.assert_not_called()
             image.fill(QColor('black'));window.new_frame(image)

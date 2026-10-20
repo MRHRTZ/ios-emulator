@@ -128,10 +128,10 @@ class Worker(QObject):
                         heapq.heappush(scheduled, (now, order, command[1:]))
                     elif command[0] == 'gesture' and not paused and self.session.input_ready:
                         _, x0, y0, x1, y1, duration, hold = command
-                        for step in range(17):
-                            x, y = round(x0 + (x1 - x0) * step / 16), round(y0 + (y1 - y0) * step / 16)
+                        for step in range(2):
+                            x, y = round(x0 + (x1 - x0) * step), round(y0 + (y1 - y0) * step)
                             order += 1
-                            heapq.heappush(scheduled, (now + duration * step / 16, order, (1, 0, True, x, y)))
+                            heapq.heappush(scheduled, (now + duration * step, order, (1, 0, True, x, y)))
                         order += 1
                         heapq.heappush(scheduled, (now + duration + hold + .03, order, (1, 0, False, x1, y1)))
                 while scheduled and scheduled[0][0] <= time.monotonic() and not paused:
@@ -378,7 +378,7 @@ class Window(QMainWindow):
         rail.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
 
         self.input_buttons = []
-        self.home = self.side_button(rail, 'Home', 'Home Screen (F1 / Esc)', self.go_home, QStyle.StandardPixmap.SP_ArrowUp)
+        self.home = self.side_button(rail, 'Home', 'Home Screen (F1)', self.go_home, QStyle.StandardPixmap.SP_ArrowUp)
         self.apps = self.side_button(rail, 'Apps', 'Recent Apps (App Switcher)', self.app_switcher, QStyle.StandardPixmap.SP_FileDialogListView)
         self.power = self.side_button(rail, 'Power', 'Power Button (F2)', None, QStyle.StandardPixmap.SP_DialogCloseButton)
         self.power.pressed.connect(lambda: self.key(0, True))
@@ -457,7 +457,18 @@ class Window(QMainWindow):
 
         self.progress = Spinner()
         self.progress.hide()
-        self.statusBar().addPermanentWidget(self.progress)
+        self.status_text=QLabel('')
+        self.status_text.setAccessibleName('Emulator status')
+        self.status_text.setObjectName('statusText')
+        self.status_panel=QWidget()
+        status_layout=QHBoxLayout(self.status_panel)
+        status_layout.setContentsMargins(7,0,0,0)
+        status_layout.setSpacing(6)
+        status_layout.addWidget(self.progress)
+        status_layout.addWidget(self.status_text,1)
+        self.statusBar().addWidget(self.status_panel,1)
+        self.status_base_message=''
+        self.status_notice_until=0.
         self.fps_label = QLabel('')
         self.fps_label.setObjectName('fpsLabel')
         self.statusBar().addPermanentWidget(self.fps_label)
@@ -511,6 +522,7 @@ class Window(QMainWindow):
             QMenu::item:disabled, QWidget:disabled {{ color: {muted}; }}
             QPlainTextEdit, QComboBox, QSpinBox {{ background: {panel}; color: {fg}; border: 1px solid {border}; }}
             QStatusBar {{ border-top: 1px solid {border}; }}
+            QStatusBar::item {{ border: none; }}
             QStatusBar QLabel {{ color: {fg}; padding: 0 4px; }}
             #sidebarSeparator {{ background: {border}; color: {border}; }}
             #mumuSidebar {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
@@ -599,19 +611,29 @@ class Window(QMainWindow):
                         colorful+=max(c.red(),c.green(),c.blue())-min(c.red(),c.green(),c.blue())>30
             if colorful>=8 or top_bright>=8:
                 self.auto_home_pending=False
-                self.append_log('Startup: lock/home frame detected; sending Home automatically.')
-                QTimer.singleShot(700,self.go_home)
+                self.append_log('Startup: lock/home frame detected; scheduling unlock swipe.')
+                QTimer.singleShot(2500,self.go_home)
             elif bright>=8:
                 self.startup_seen_image=True
-            elif (self.startup_seen_image or now-self.startup_display_at>=30) and self.startup_wake_count<3 and now-self.startup_last_wake>=15:
+            elif self.startup_seen_image and self.startup_wake_count<12 and now-self.startup_last_wake>=30:
                 self.startup_wake_count+=1;self.startup_last_wake=now
-                self.append_log('Startup: display asleep; sending Power to wake it.')
+                self.append_log(f'Startup: display asleep; waking it ({self.startup_wake_count}/12).')
                 self.key_click(0)
         self.screen.image = image
         self.screen.update()
 
     def append_log(self, text):
         self.logs.appendPlainText(text.rstrip())
+
+    def show_status_message(self, text, timeout=0):
+        if timeout:
+            self.status_notice_until=time.monotonic()+timeout/1000
+            self.status_text.setText(text)
+            QTimer.singleShot(timeout,lambda:self.status_text.setText(self.status_base_message)
+                if time.monotonic()>=self.status_notice_until else None)
+        else:
+            self.status_base_message=text
+            if time.monotonic()>=self.status_notice_until:self.status_text.setText(text)
 
     def set_state(self, stage, input_ready, fps):
         if self.stopping and stage != 'stopped': return
@@ -638,12 +660,12 @@ class Window(QMainWindow):
             'booting': 'Booting iOS...',
             'services': 'Starting iOS services...',
             'springboard': 'Launching SpringBoard...',
-            'display': 'iOS running',
+            'display': 'Preparing iOS display...' if self.auto_home_pending else 'iOS running',
             'paused': 'Paused',
             'panic': 'iOS stopped due to a kernel panic. See logs.'
         }
-        self.statusBar().showMessage(messages.get(stage, stage))
-        self.progress.setVisible(stage in ('starting', 'booting', 'services', 'springboard'))
+        self.show_status_message(messages.get(stage, stage))
+        self.progress.setVisible(stage in ('starting', 'booting', 'services', 'springboard') or (stage=='display' and self.auto_home_pending))
         self.fps_label.setText(f'{fps:.1f} fps' if active else '')
 
     def pause(self):
@@ -664,7 +686,7 @@ class Window(QMainWindow):
             for button in self.input_buttons+[self.keyboard_button,self.screenshot_button]: button.setEnabled(False)
             for action in (self.start_action,self.pause_action,self.stop_action,self.restart_action,self.keyboard_action,self.screenshot_action): action.setEnabled(False)
             self.worker.stopping.set()
-            self.statusBar().showMessage('Stopping emulator...')
+            self.show_status_message('Stopping emulator...')
 
     def restart(self):
         if self.worker:
@@ -708,9 +730,9 @@ class Window(QMainWindow):
 
     def go_home(self):
         if self.worker and self.screen.enabled_input:
-            # iOS accepts the HID Menu/Home key on the D22AP guest, including
-            # unlock. A synthetic swipe can leave the lock screen open.
-            self.key_click(3)
+            # D22AP is a Face ID phone. Mirror the actual edge swipe observed
+            # unlocking this guest; consumer Menu events can be ignored at lock.
+            self.worker.submit('gesture', 540, 2380, 540, 1365, .20, 0.)
 
     def app_switcher(self):
         if self.worker and self.screen.enabled_input:
@@ -732,7 +754,7 @@ class Window(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, 'Save Screenshot', str(folder / time.strftime('iOS-%Y%m%d-%H%M%S.png')), 'PNG Images (*.png)')
         if path:
             if self.screen.image.save(path):
-                self.statusBar().showMessage('Screenshot saved', 5000)
+                self.show_status_message('Screenshot saved', 5000)
             else:
                 QMessageBox.warning(self, 'Screenshot', 'Failed to save screenshot image.')
 
@@ -771,7 +793,7 @@ class Window(QMainWindow):
             " â€¢ Click: Touch screen\n"
             " â€¢ Drag: Swipe gestures\n\n"
             "Shortcuts:\n"
-            " â€¢ Home / F1 / Esc: Return to Home Screen\n"
+            " â€¢ Home / F1: Return to Home Screen\n"
             " â€¢ Apps: Open App Switcher\n"
             " â€¢ F2: Power Button (Lock/Unlock)\n"
             " â€¢ F4: Volume Up\n"

@@ -1,3 +1,20 @@
+## Status bar / handoff checkpoint (2026-10-20, newest)
+
+- User approved spinner left of status text with padding and requested no FPS separator. Source uses a shared horizontal status panel (7px left margin, 6px spacing) and QStatusBar::item border:none for all themes. Current running GUI predates this layout; it takes effect after the next GUI restart. No running guest was interrupted for this cosmetic change.
+- Validation: PYTHONPATH=tools, QT_QPA_PLATFORM=offscreen, unittest discover -s tests: 31 tests PASS. Earlier direct module invocation lacked tools on the import path; rerun with the project path passed.
+- Current default kernel remains0091 SHA2c26ecac848b8cccb388d806a2e05ffea9740b8d8ac8850e536e6b2ce0bb6cec. Last observed run211731-391900 reached Home after actual mouse unlock. Physical host e key visibly reached Safari; Unicode packet text injection did not. Return/backspace, held-key cleanup and fully automatic unlock still need testing.
+- Pending runtime verification: revised three-event Home swipe, 12 wake attempts at30sec intervals after boot-image transition, and new status layout. Safari HTML drawing and genuine guest wallpaper remain unresolved. Waiting placeholders were visually gone. Wrapper and native APFS pipeline stay deferred. Preserve venv/ and local firmware.
+
+---
+## Clean Home / keyboard retest checkpoint (2026-10-20, newest)
+
+- Kernel0090 comparison run210817-807600 reached real lock screen then HOME via actual PC mouse edge swipe: touch0 down537,2381 edge -> up537,1365 edge. Both Waiting placeholders are GONE after backed-up PhotosReliveWidget removal; Photos/AppStore/Settings and dock remain. Safari opens but webpage content remains white (existing searchgithub resumed). Software drawing pref false did not fix rendering.
+- Consumer Menu/Home event can be ignored at the lock screen. Prior serial acknowledgment was not unlock proof. Updated go_home and auto-start to the actually observed edge swipe x540/y2380->1365/.55sec. Auto-start waits2.5sec after lock/top frame detection. Removed premature initial-black timeout; Power attempts now wait for an observed boot-image->black transition, bounded3. UI now says Preparing iOS display until startup frame detection. Need fresh runtime verification.
+- Temp frame cache on host TEMP measured~27-56ms/export, actual~9-9.5fps at target10 on comparison.31 tests PASS. Comparison closed through GUI before next run; verify gui-result exit status. No assertion that more CPUs or GPU caused this improvement.
+- CURRENT: default0091 restarted with latest UI/swipe/temp-cache source and local packet capture, parentexec57026. Read active.json for run/PID. Goal verify full automatic start and real PC typing. Old0091 black did not prove a keyboard regression: previous tests only sent hardware Home before readiness, not the successful edge swipe.
+- Existing local ipsw CLI needs complete subcache filenames; metadata command failed safely on missing .01. research/dyld partial extraction remains untrusted/incomplete. Do not resume bulk firmware reads during guest boot on HDD. Base/overlay preserved; no firmware uploaded.
+
+---
 ## Runtime isolation / usage checkpoint (2026-10-20, newest)
 
 - User requested checkpoint before 5-hour usage gets low. Account snapshot: primary39% used/61% remaining, weekly22% used. Check again at milestones; this is account-wide usage, not checklist progress. TODO40/61=65.6%, not compatibility score.
