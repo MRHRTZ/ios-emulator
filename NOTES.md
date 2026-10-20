@@ -1,3 +1,16 @@
+## Windows PC emulator handoff (2026-10-20)
+
+Current work is the Windows PC fork, not phone bring-up. No device was accessed.
+- Host: Windows x64, Python 3.12.0, LLVM available, QEMU 11.1.0 discovered at G:\Software\qemu.
+- tools/qemu-sweet.py: added explicit/PATH/registry QEMU discovery, --qemu, loopback TCP QMP on Windows, normalized/escaped option paths, explicit TCG, hidden subprocess window, loopback GDB, bounded QMP reads and process cleanup on errors. Unix socket path retained on POSIX.
+- tools/check-windows-qemu.py: real ARM64 mov-x0-42 execution, QMP register read and byte-exact memory export all PASS, including paths with spaces/commas. This probe does not boot iOS.
+- Kernel artifact obtained using existing GitHub authentication from dipa-studio/ios-sweet, artifact 12147422947 (xnu-kernel), run 39158169212, source fdad0de8dc0e75c5ea84762adc03f7232dc91f19. ZIP SHA256 28a040196aa632af45b7ba6415831a09dd5098f7f9338b5ce6d1c146a9982b56; kernel SHA256 d9cb893bd2baf841e94cd2001f0ec70c0fea42f045f87f14ae807e4ebc50e1e5, verified against artifact SHA256SUMS. Local kernel in ignored xnu/out/.
+- Real kernel boot: generated --qemu ADT and payload in ignored research/windows-smoke/. First 20s snapshot reached memory/scheduler/CPU/IOKit/framebuffer, incomplete_decode with 62 unknown glyphs. Second 45s snapshot (-noprogress rd=md0 sweettouch=0 sweetkeys=0 sweetusb=0) reached BSD root lookup, then panic IOFindBSDRoot: specified root memory device, md0, has not been configured. Decoder: zero unknown glyphs; result.json status panic. This is NOT an iOS userspace/home-screen boot.
+- Missing research/ipsw-x/d22ap.adt yields missing /product warning. No iOS IPSW/root image was downloaded or created in this turn.
+- README now describes PC fork; original README preserved in docs/PHONE_PORT_REFERENCE.md. Setup, boot commands, provenance, limitations in docs/WINDOWS.md.
+- NEXT: prepare a minimal test root RAM disk and pass --ramdisk + rd=md0, then obtain/extract the selected iPhone X IPSW for real userland. QEMU virt lacks the phone UFS controller; persistent storage/input/live display need separate design. Do not use historical phone flashing commands for this PC fork.
+
+---
 # iOS 16 on sweet (Redmi Note 10 Pro, SM7150) - working notes
 
 ## Agent handoff / active work (2026-10-15, latest)

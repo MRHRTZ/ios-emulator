@@ -21,6 +21,7 @@ returns 2 when a panic is visible; absence of a panic does not prove boot.
 An undecodable or blank screen returns 3 with --fail-on-panic.
 """
 import argparse, json, os, shutil, socket, struct, subprocess, sys, time, zlib
+from pathlib import Path
 
 FB_BASE, FB_W, FB_H = 0x9c000000, 1080, 2400
 FB_STRIDE = FB_W * 4
@@ -29,11 +30,69 @@ STUB_PA = 0x40200000	# above the dtb QEMU places at RAM base
 BOOT_LINE_LENGTH = 608
 
 
-def check_qemu_dependency(cpu='cortex-a76'):
+def find_qemu(explicit=None):
+    """Find an explicit executable, PATH entry, or Windows installer location."""
+    selected = explicit or os.environ.get('QEMU_AARCH64')
+    if selected:
+        return shutil.which(selected) or (selected if os.path.isfile(selected) else None)
+    found = shutil.which('qemu-system-aarch64')
+    if found or os.name != 'nt':
+        return found
+    import winreg
+    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        for prefix in (r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+                       r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'):
+            try:
+                with winreg.OpenKey(hive, prefix) as parent:
+                    for index in range(winreg.QueryInfoKey(parent)[0]):
+                        try:
+                            with winreg.OpenKey(parent, winreg.EnumKey(parent, index)) as key:
+                                name = winreg.QueryValueEx(key, 'DisplayName')[0]
+                                if not name.lower().startswith('qemu'):
+                                    continue
+                                try:
+                                    location = winreg.QueryValueEx(key, 'InstallLocation')[0]
+                                except OSError:
+                                    location = ''
+                                if not location:
+                                    uninstall = winreg.QueryValueEx(key, 'UninstallString')[0]
+                                    exe = uninstall.split('"')[1] if uninstall.startswith('"') else uninstall.split()[0]
+                                    location = os.path.dirname(exe)
+                                candidate = os.path.join(location, 'qemu-system-aarch64.exe')
+                                if os.path.isfile(candidate):
+                                    return candidate
+                        except OSError:
+                            continue
+            except OSError:
+                continue
+    return None
+
+
+def qemu_path(path):
+    """QEMU option strings require forward slashes and doubled literal commas."""
+    return Path(path).resolve().as_posix().replace(',', ',,')
+
+
+def monitor_endpoint(out):
+    if os.name == 'nt':
+        # Pick an available loopback port immediately before launch.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        return ('127.0.0.1', port), f'tcp:127.0.0.1:{port},server=on,wait=off'
+    path = str(Path(out) / 'mon.sock')
+    if os.path.exists(path):
+        os.unlink(path)
+    return path, f'unix:{qemu_path(path)},server=on,wait=off'
+
+
+def check_qemu_dependency(cpu='cortex-a76', qemu_bin=None):
     """Verify qemu-system-aarch64 binary and CPU model support."""
-    qemu_bin = shutil.which('qemu-system-aarch64')
+    qemu_bin = qemu_bin or find_qemu()
     if not qemu_bin:
         print('[!] Error: qemu-system-aarch64 not found in PATH.', file=sys.stderr)
+        print('    Use --qemu PATH or set QEMU_AARCH64 to the executable.', file=sys.stderr)
+        print('    Windows installer: https://qemu.weilnetz.de/w64/', file=sys.stderr)
         print('    Install instructions:', file=sys.stderr)
         print('      Arch Linux:    sudo pacman -S qemu-system-aarch64', file=sys.stderr)
         print('      Ubuntu/Debian: sudo apt install qemu-system-arm', file=sys.stderr)
@@ -161,34 +220,47 @@ def screen_result(screen, unknown):
     return {'status': status, 'unknown_glyphs': unknown, 'snapshot_only': True}
 
 
-def qmp(sock_path, *cmds, pmemsave=None):
-    """Run QEMU human-monitor commands over QMP (synchronous, unlike the echoing HMP socket)."""
-    s = socket.socket(socket.AF_UNIX)
-    s.connect(sock_path)
-    f = s.makefile('rw')
-    f.readline()
+def qmp(endpoint, *cmds, pmemsave=None):
+    """Execute QMP on a Windows loopback TCP endpoint or a Unix socket."""
+    deadline = time.monotonic() + 10
+    while True:
+        s = socket.socket(socket.AF_INET if isinstance(endpoint, tuple) else socket.AF_UNIX,
+                          socket.SOCK_STREAM)
+        s.settimeout(5)
+        try:
+            s.connect(endpoint)
+            break
+        except OSError:
+            s.close()
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+    with s, s.makefile('rw', encoding='utf-8', newline='\n') as f:
+        greeting = f.readline()
+        if not greeting or 'QMP' not in json.loads(greeting):
+            raise RuntimeError('Missing QMP greeting')
 
-    def call(execute, **args):
-        f.write(json.dumps({'execute': execute, 'arguments': args}) + '\n')
-        f.flush()
-        while True:
-            r = json.loads(f.readline())
-            if 'return' in r or 'error' in r:
-                return r
+        def call(execute, **args):
+            f.write(json.dumps({'execute': execute, 'arguments': args}) + '\n')
+            f.flush()
+            while True:
+                line = f.readline()
+                if not line:
+                    raise RuntimeError('QEMU closed the QMP connection')
+                response = json.loads(line)
+                if 'error' in response:
+                    raise RuntimeError(f'QMP {execute}: {response["error"]}')
+                if 'return' in response:
+                    return response['return']
 
-    call('qmp_capabilities')
-    out = []
-    for c in cmds:
-        r = call('human-monitor-command', **{'command-line': c})
-        if 'error' in r:
-            print(f'qmp {c!r}: {r["error"]}', file=sys.stderr)
-        out.append(r.get('return', ''))
-    if pmemsave:	# native QMP: HMP's argument parser chokes on '-' in paths
-        r = call('pmemsave', val=pmemsave[0], size=pmemsave[1], filename=pmemsave[2])
-        if 'error' in r:
-            print(f'qmp pmemsave: {r["error"]}', file=sys.stderr)
-    s.close()
-    return out
+        call('qmp_capabilities')
+        out = [call('human-monitor-command', **{'command-line': c}) for c in cmds]
+        if pmemsave:
+            # JSON paths are literal, unlike comma-separated command-line options.
+            call('pmemsave', val=pmemsave[0], size=pmemsave[1],
+                 filename=Path(pmemsave[2]).resolve().as_posix())
+        return out
+
 
 
 def stream_serial_file(serial_path, file_pos, out_stream=sys.stdout):
@@ -227,11 +299,17 @@ def main():
     ap.add_argument('--kernel', help='matching unstripped kernel, for exact framebuffer text decoding (uses llvm-nm)')
     ap.add_argument('--fail-on-panic', action='store_true', help='exit 2 for a visible panic, 3 for incomplete/blank decoding; requires --kernel')
     ap.add_argument('--live-serial', action='store_true', help='stream serial console output to stdout in real time')
+    ap.add_argument('--qemu', help='Path to qemu-system-aarch64 executable')
     ap.add_argument('--check-env', action='store_true', help='check QEMU installation and dependencies without running a payload')
     a = ap.parse_args()
+    qemu_bin = find_qemu(a.qemu)
+    if a.qemu and not qemu_bin:
+        ap.error('--qemu executable does not exist')
+    if a.secs <= 0:
+        ap.error('--secs must be positive')
 
     if a.check_env:
-        ok = check_qemu_dependency(a.cpu)
+        ok = check_qemu_dependency(a.cpu, qemu_bin)
         if shutil.which('llvm-nm'):
             print('[*] llvm-nm found in PATH', file=sys.stderr)
         else:
@@ -244,7 +322,7 @@ def main():
     if a.fail_on_panic and not a.kernel:
         ap.error('--fail-on-panic requires --kernel')
 
-    if not check_qemu_dependency(a.cpu):
+    if not check_qemu_dependency(a.cpu, qemu_bin):
         return 1
 
     if a.kernel and not check_kernel_tools(a.kernel):
@@ -260,34 +338,33 @@ def main():
             ap.error('kernel must contain exactly one _iso_font symbol')
         font = payload_data(payload, fonts[0], 256 * 16)
     os.makedirs(a.outdir, exist_ok=True)
-    out = os.path.abspath(a.outdir)
+    out = Path(a.outdir).resolve().as_posix()
 
     phys_base, img, ba_pa, entry_pa = build_image(payload)
     open(f'{out}/ram.bin', 'wb').write(img)
     open(f'{out}/stub.bin', 'wb').write(stub(ba_pa, entry_pa))
     print(f'phys_base={phys_base:#x} boot_args={ba_pa:#x} entry={entry_pa:#x}', file=sys.stderr)
 
-    mon = f'{out}/mon.sock'
-    if os.path.exists(mon):
-        os.unlink(mon)
+    mon, mon_option = monitor_endpoint(out)
     # virt RAM starts at 0x40000000: cover the payload's RAM (mkadt.py --highmem needs 8G).
     mem_size = struct.unpack_from('<Q', payload, 0x40)[0]
     ram_gib = max(4, -(-(phys_base + mem_size - 0x40000000) // (1 << 30)))
-    cmd = ['qemu-system-aarch64', '-M', 'virt,gic-version=3', '-cpu', a.cpu, '-smp', '1', '-m', f'{ram_gib}G',
-           '-nographic', '-serial', f'file:{out}/serial.txt', '-qmp', f'unix:{mon},server,nowait',
+    cmd = [qemu_bin, '-accel', 'tcg', '-M', 'virt,gic-version=3', '-cpu', a.cpu, '-smp', '1', '-m', f'{ram_gib}G',
+           '-nographic', '-serial', f'file:{qemu_path(out + "/serial.txt")}', '-qmp', mon_option,
            '-d', 'int,guest_errors,unimp', '-D', f'{out}/qemu.log', '-no-reboot',
-           '-device', f'loader,file={out}/ram.bin,addr={phys_base:#x},force-raw=on',
-           '-device', f'loader,file={out}/stub.bin,addr={STUB_PA:#x},force-raw=on',
+           '-device', f'loader,file={qemu_path(out + "/ram.bin")},addr={phys_base:#x},force-raw=on',
+           '-device', f'loader,file={qemu_path(out + "/stub.bin")},addr={STUB_PA:#x},force-raw=on',
            '-device', f'loader,addr={STUB_PA:#x},cpu-num=0']
     if a.gdb:
-        cmd += ['-S', '-gdb', 'tcp::1234']
+        cmd += ['-S', '-gdb', 'tcp:127.0.0.1:1234']
 
     p = None
     serial_file = f'{out}/serial.txt'
     serial_pos = 0
 
     try:
-        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL)
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         if a.gdb:
             print('gdb stub on :1234; QMP socket:', mon, file=sys.stderr)
             p.wait()
@@ -337,6 +414,9 @@ def main():
             p.wait()
         return 130
     finally:
+        if p and p.poll() is None:
+            p.kill()
+            p.wait()
         ram_file = f'{out}/ram.bin'
         if os.path.exists(ram_file):
             try:
