@@ -1,3 +1,11 @@
+## Shutdown/filesystem verified; final wallpaper trial - 2026-10-21 05:33 WIB
+
+- Kernel0094 run20261021-052131-435300 Shut Down iOS requested05:29:45. Serial: launchd SIGTERM/quiesce, vfs_unmountall(system), HFS root unmount, done, CPU halted, platform halt reached. QEMU1064 exited0; gui-result stage=shutdown. No Force Stop used. Readonly helper353? actual PID36420/data/guest-shutdown-inspect exited0; HFS attributes0x80002100, fsck -fn reports volume OK/exit0, readonly job completed. TODO orderly shutdown and2/4CPU pause-clock validation complete.
+- Installed verified0094 as xnu/out default; source.json run39505871637/head7f4e079/SHA7604042b608b242b6f7cd400bb8aad6f1e68f2415987a21c510a443e944b56f6.0091 fallback SHA2c26... verified intact.
+- Snapshot before-earth-trial-20261021 (qcow2 ID1) created before offline wallpaper work. Trial1/data/guest-earth-trial failed target guard because three7400 display variants exist; no wallpaper files changed. Trial2/data/guest-earth-trial2 targets ONLY375w-812h@3x iPhone-X variant, original files backed up with .before-emulator-earth suffix. Helper PID14140/session40778 running as of05:33; await JOB_EARTH_FILES_INSTALLED/JOB_EARTH_TRIAL_COMPLETE and final fsck before boot. Trial modifies real guest default CAML assets, not host imagery; visual success NOT yet claimed. NASA source/hash retained in data/assets. Backing base image unchanged.
+- Latest GUI3419/window1246684 is stopped with settings dialog just accepted. Close/reload after helper exit to pick up75d7c08 unlock retry, then boot default0094 and observe auto-unlock/wallpaper without manual Home/Power. About6% allowance remained at94% used; save/stop at97-99% used per user.
+
+---
 ## Four-core RTC and screenshot milestone - 2026-10-21 05:29 WIB
 
 - Kernel0094 run20261021-052131-435300 paused at05:27:21; UTC lag75.67sec at05:28:37. Resume shortly afterward emitted calendar-resynchronized marker and lag returned0.68sec, no warning, held-input count0/backlog0. Settings clicked afterward to verify UI responsiveness; wait for fresh visual result before completing combined2/4CPU TODO.

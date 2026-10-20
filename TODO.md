@@ -53,10 +53,10 @@ require separate compatibility work, including ARM64e/PAC and kernel ABI.
 - [x] Bring up backboardd/SpringBoard and verify a real home screen.
 - [x] Add keyboard/mouse/touch-event input bridging and live display output.
 - [x] Reuse guest changes in the GUI persistent overlay.
-- [ ] Implement orderly iOS shutdown (current Stop is a QEMU power cut).
+- [x] Implement orderly iOS shutdown (kernel0094 process exit, sync/unmount, PSCI halt and read-only fsck verified; Force Stop is still a power cut).
 - [x] Supply QEMU PL031 host UTC clock; Apple logs show current date.
 - [x] Adapt Aff0 MPIDRs / HVC PSCI; 2/4 CPU test userspace and SGI verified.
-- [ ] Validate 2/4-core GUI responsiveness and clock across Pause/Resume.
+- [x] Validate 2/4-core GUI responsiveness and RTC calendar recovery across Pause/Resume.
 - [x] Verify IPv6 DNS, remote TLS and actual HTTP 200/HTML arrival in Safari.
 - [x] Verify IPv4 DHCP and route with BPF-enabled kernel0090.
 - [ ] Deferred by user (2026-10-21): Safari/WebKit blank content despite successful HTML receipt.

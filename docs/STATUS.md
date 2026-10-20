@@ -2,7 +2,7 @@
 
 Snapshot: 2026-10-21, dev/window-native.
 
-**Checklist completion: 50/70 (71.4%).** Counted from the top-level checkboxes
+**Checklist completion: 52/70 (74.3%).** Counted from the top-level checkboxes
 in [TODO.md](../TODO.md). Items have equal weight; this is bookkeeping, not a
 compatibility score or release-readiness measure. Deferred work remains counted.
 
@@ -22,6 +22,10 @@ compatibility score or release-readiness measure. Deferred work remains counted.
   resume; the visible clock subsequently caught up and Settings remained usable.
 - Four-core real Home; unavailable Photos widget placeholders removed. Settings
   rendered complete pages and actual mouse drags scrolled them after launch wait.
+- Four-core RTC resume also reduced about83 seconds of lag to under1 second;
+  Settings responded and its clock caught up. Kernel0094 orderly shutdown stopped
+  launchd, synced/unmounted HFS and powered QEMU off with exit0. A separate
+  read-only helper found a clean HFS flag and fsck exit0 without repairs.
 - Host UTC RTC, virtio disk/persistent-overlay lock, IPv6 DNS/TLS/HTTP receipt,
   and kernel0090 IPv4 DHCP/default route (10.0.2.15 via10.0.2.2).
 - Pinned requirements installed in a local Python3.12 venv; pip check and50 host
@@ -33,8 +37,6 @@ compatibility score or release-readiness measure. Deferred work remains counted.
 
 - Bounded automatic-unlock retry on four-core fresh boot. The first0094 run
   still needed manual Home; the new retry source needs runtime validation.
-- Four-core pause/RTC validation and kernel0094 orderly shutdown, followed by
-  a read-only filesystem check. Successful compilation alone is not completion.
 - Default wallpaper through the actual guest PosterBoard path; no host overlay.
 - Motion latency under different capture targets and host/guest workload.
 

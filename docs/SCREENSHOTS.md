@@ -22,3 +22,10 @@ Firmware, disk images, network captures, diagnostic dumps and private guest
 content remain outside Git. Documentation images show only the clean test
 guest and emulator controls. Apple and iOS names remain their owners' trademarks;
 this independent research project has no Apple affiliation.
+
+## Dark emulator settings
+
+![Actual native dark settings dialog](screenshots/windows-settings-dark.jpg)
+
+Captured after the verified shutdown. All resource inputs are dropdowns; OK and
+Cancel remain visible. The GUI exposes the current four-CPU kernel limit.
