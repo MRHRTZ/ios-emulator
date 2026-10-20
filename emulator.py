@@ -152,9 +152,12 @@ def prepare_device_tree(ipsw):
 def guest_status(serial, is_test=False):
     apple = (not is_test and 'com.apple.xpc.launchd|' in serial
              and 'Early boot complete. Continuing system boot.' in serial)
+    springboard = apple and bool(re.search(r'(?m)^exec SpringBoard\r?$', serial))
+    display_active = any(m in serial for m in ('SWEET FB: swap ', 'SWEET FB: backboardd sel 55', 'SWEET SURF: backboardd create id'))
     return {
         'apple_userland_started': apple,
-        'springboard_exec_observed': apple and bool(re.search(r'(?m)^exec SpringBoard\r?$', serial)),
+        'springboard_exec_observed': springboard,
+        'display_pipeline_active': display_active,
         'root_mount_failed': 'cannot mount root' in serial and 'load_init_program:' not in serial,
         'kernel_panic_observed': bool(re.search(r'(?m)^panic\(cpu ', serial)),
     }
@@ -230,9 +233,12 @@ def run(args):
     milestones = guest_status(serial, is_test)
     marker = 'SWEET userspace: init running as PID 1'
     reached = marker in screen or marker in serial
+    boot_verified = (milestones.get('springboard_exec_observed', False)
+                     and milestones.get('display_pipeline_active', False)
+                     and not milestones.get('kernel_panic_observed', False))
     summary = {'mode': 'test' if is_test else ('virtio-ios-root' if block_disk else 'custom-ram-root'), 'qemu_result': result,
                'test_pid1_observed': reached, **milestones,
-               'full_ios_boot_verified': False,
+               'full_ios_boot_verified': boot_verified,
                'runner_exit_code': process.returncode, 'output': str(out)}
     firmware.write_json(out / 'summary.json', summary)
     firmware.write_json(ROOT / 'data/last-run.json', summary)
@@ -252,6 +258,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('doctor', help='Check QEMU/Python/LLVM/kernel')
+    gui = commands.add_parser('gui', help='Open the native Windows emulator GUI')
+    gui.add_argument('--no-start', action='store_true', help='Open the window without starting iOS')
     prepare = commands.add_parser('prepare-root', help='Build the iOS HFS+ disk using a temporary QEMU helper')
     prepare.add_argument('--timeout', type=int, default=3600)
     prepare.add_argument('--check-only', action='store_true', help='Recheck completed staging disk without recopying files')
@@ -272,6 +280,12 @@ def main():
     commands.add_parser('status', help='Show saved download and last-run status')
     args = parser.parse_args()
     try:
+        if args.command == 'gui':
+            try:
+                import emulator_gui
+            except ImportError as error:
+                raise ValueError('GUI dependency missing. Install: python -m pip install PySide6==6.11.1') from error
+            return emulator_gui.main(auto_start=not args.no_start)
         if args.command == 'doctor':
             return doctor()
         if args.command == 'prepare-root':

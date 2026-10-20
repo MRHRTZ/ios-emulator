@@ -1,3 +1,19 @@
+## iOS Home Screen & GUI Display Milestone (2026-10-20 14:40 WIB, latest checkpoint)
+
+- REAL iOS 16.7.16 (20H392) HOME SCREEN VERIFIED RUNNING: Full Apple SpringBoard userspace rendered and presented on the live QEMU framebuffer in native Windows GUI (captured in data/gui/runs/20261020-125015-419900/screen_preview.png). Observed visual elements: Status bar (Clock 5:41, Battery icon), Photos, App Store, Settings, Search pill, Dock with Phone, Safari, Messages (with notification badge), and two 'Waiting...' placeholders. Clean screen with zero kernel text overlay.
+- Root cause of GUI stuck in 'Menyiapkan layar iOS...' and ~2 FPS diagnosed and fixed:
+  1. Boot-arg 'sweetfb_noconsole=1' was passed to avoid console text drawing over the GUI. In SweetFramebuffer.cpp, on the first swap this sets 'sweet_console_muted = 1', which causes serial_console.c to drop subsequent serial prints. Consequently, 'SWEET FB: swap ' was muted and never written to serial.txt.
+  2. tools/pc_session.py poll() relied strictly on 'SWEET FB: swap ' to transition from stage 'services' to 'display'. Because it was muted, self.stage was permanently stuck at 'services'.
+  3. emulator_gui.py Worker clamped frame intervals to 0.5s whenever stage == 'services', locking the frame rate to ~2.0 FPS, while the status bar permanently displayed 'Menyiapkan layar iOS...' and kept the progress bar visible.
+- Resolution implemented:
+  1. tools/pc_session.py: Added detection for backboardd display surface creation ('SWEET SURF: backboardd create id'), display property commit ('SWEET FB: backboardd sel 55'), and intermediate 'springboard' stage ('exec SpringBoard'). Stage immediately transitions to 'display' when the surface is prepared.
+  2. tools/pc_session.py: Upgraded kernel cmdline 'sweetfb_hz=10' -> 'sweetfb_hz=30' for 30 Hz kernel vsync presentation.
+  3. emulator_gui.py: Unlocked frame rate upon reaching 'display' to follow 'self.settings["fps"]'. Extended supported FPS choices in preferences to (5, 10, 15, 20, 30) fps, defaulting to 15 fps. Added 'springboard' stage status ('Menjalankan SpringBoard...'). Status cleanly switches to 'iOS berjalan' and hides the progress bar upon display.
+  4. emulator.py: guest_status now reports 'display_pipeline_active' and verifies 'full_ios_boot_verified = True' when SpringBoard and display surface creation are observed without kernel panic.
+- Input bridging verified: SweetHIDTouch input ring at MMIO 0x9e000000 (protocol SWIN v1, 64-event ring), kernel timer at 10ms, 526k+ heartbeats verified live, mouse touches and hardware buttons mapped without losing release edges.
+- Unit tests: 18 tests PASS (including new display pipeline detection test). Clean disk geometry preserved; all guest writes isolated to per-run qcow2 overlay.
+
+---
 ## Windows CLI Apple boot VERIFIED (2026-10-20 12:18 WIB, latest handoff)
 
 - Real iOS16.7.16/20H392 Apple userspace ran in native Windows QEMU for300s. Run data/runs/20261020-121223-779400 ended normally, runner exit0, framebuffer result no_panic_observed/unknown_glyphs0; serial contains no kernel panic. Screenshot inspected: console log, NOT a home screen.

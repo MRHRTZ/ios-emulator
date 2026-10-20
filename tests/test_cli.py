@@ -51,6 +51,16 @@ class GuestStatusTests(unittest.TestCase):
         text = 'com.apple.xpc.launchd| Early boot complete. Continuing system boot.\npanic(cpu 0 caller ...\n'
         self.assertTrue(emulator.guest_status(text)['kernel_panic_observed'])
 
+    def test_display_pipeline_detected_from_backboardd_surface_and_swap(self):
+        base = 'com.apple.xpc.launchd| Early boot complete. Continuing system boot.\nexec SpringBoard\n'
+        self.assertFalse(emulator.guest_status(base)['display_pipeline_active'])
+        for marker in ['SWEET SURF: backboardd create id 2\n',
+                       'SWEET FB: backboardd sel 55 in 1/72 out 0/0 -> 0x0\n',
+                       'SWEET FB: swap 2 layer 0 surface 2\n']:
+            status = emulator.guest_status(base + marker)
+            self.assertTrue(status['display_pipeline_active'])
+            self.assertTrue(status['springboard_exec_observed'])
+
 
 if __name__ == '__main__':
     unittest.main()

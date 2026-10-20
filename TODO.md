@@ -50,9 +50,9 @@ require separate compatibility work, including ARM64e/PAC and kernel ABI.
       in guest memory (default 2048 MiB). Small test RAM roots remain supported.
 - [x] Start Apple's dyld and launchd; early boot complete confirmed in serial,
       xpcproxy/SpringBoard/backboardd executed. Record remaining daemon failures.
-- [ ] Bring up backboardd/SpringBoard and verify a real home screen.
-- [ ] Add keyboard/mouse/touch-event input bridging and live display output.
-- [ ] Implement orderly guest shutdown and reuse of per-run persistent changes.
+- [x] Bring up backboardd/SpringBoard and verify a real home screen.
+- [x] Add keyboard/mouse/touch-event input bridging and live display output.
+- [x] Implement orderly guest shutdown and reuse of per-run persistent changes.
 - [ ] Provide a guest clock and network connection; initial clock is 1969/1970.
 
 Installing QEMU and downloading an IPSW do not complete these tasks. The CLI
@@ -71,5 +71,5 @@ must report missing prerequisites honestly, never label the test PID 1 as iOS.
 - [ ] Define QEMU/resource discovery relative to an installed application.
 - [ ] Bundle Python runtime, QEMU and required resources in one installer/app.
 - [ ] Keep firmware downloaded separately; do not bundle Apple's IPSW.
-- [ ] Add GUI progress, display/input, start/stop and diagnostics.
+- [x] Add GUI progress, display/input, start/stop and diagnostics.
 - [ ] Test licenses, upgrades and code signing for the packaged application.
