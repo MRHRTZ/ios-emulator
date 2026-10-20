@@ -72,3 +72,14 @@ class GuiTests(unittest.TestCase):
             self.assertTrue(names[name].toolTip())
             self.assertFalse(names[name].icon().isNull())
         window.close()
+
+
+class EmulationTimeoutTests(unittest.TestCase):
+    def test_multicore_timeouts_are_five_seconds_in_kernel_input_units(self):
+        from pc_platform import multicore_boot_args
+        self.assertEqual(multicore_boot_args(1), '')
+        for cpus in (2,4):
+            values=dict(field.split('=') for field in multicore_boot_args(cpus).split())
+            self.assertEqual(int(values['slto_us']) / 1_000_000, 5)
+            self.assertEqual(int(values['tlto_us']) / 1_000_000, 5)
+            self.assertEqual(int(values['ml-timeout-lock-panic']) // 1000 / 1_000_000_000, 5)

@@ -21,6 +21,7 @@ the iOS on-screen keyboard. Host text typing is not bridged yet.
 | Home / unlock swipe | F1 or Esc |
 | Recent apps | Sidebar Apps button |
 | Power / lock | F2 |
+| Hardware Home compatibility key | F6 |
 | Volume down / up | F3 / F4 |
 | Pause / Resume | Ctrl+P |
 | Save screenshot | Ctrl+S |
@@ -53,3 +54,7 @@ Real home/search/on-screen keyboard/Home input were visually verified with
 one CPU. Kernel smoke tests pass with 2/4 CPUs; real Apple launchd and
 SpringBoard execution were observed with four CPUs and current-day timestamps.
 Four-core home-screen responsiveness and internet remain under validation.
+
+For local network diagnosis only, set `IOS_EMULATOR_CAPTURE_NETWORK=1` before
+starting the GUI to save guest packets to its run directory as `network.pcap`.
+Captures are disabled by default and stay in ignored local runtime data.

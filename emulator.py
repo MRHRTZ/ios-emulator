@@ -213,7 +213,8 @@ def run(args):
     command_line = (f'debug=0xc serial=3 cpus={args.cpus} keepsyms=1 -enable_kprintf_spam -noprogress '
                     'sweettouch=0 sweetkeys=0 sweetusb=0 sweetlog=0 ')
     if args.cpus > 1:
-        command_line += 'slto_us=5000000 tlto_us=5000000 '
+        from pc_platform import multicore_boot_args
+        command_line += multicore_boot_args(args.cpus) + ' '
     if block_disk:
         command_line += ('rd=vioroot0 viorw=1 rootrw=1 unentitled_ios_sim_launch=1 '
                          'ignition_level=1 launchd_unsecure_cache=1 wdt=-1 wdt_test=no_user_checkin')

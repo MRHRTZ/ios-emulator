@@ -361,7 +361,8 @@ class Window(QMainWindow):
         self.statusBar().addPermanentWidget(self.fps_label)
 
         for key, handler in [('F1', self.go_home), ('Escape', self.go_home), ('F2', lambda: self.key_click(0)),
-                             ('F3', lambda: self.key_click(2)), ('F4', lambda: self.key_click(1))]:
+                             ('F3', lambda: self.key_click(2)), ('F4', lambda: self.key_click(1)),
+                             ('F6', lambda: self.key_click(3))]:
             a = QAction(self)
             a.setShortcut(QKeySequence(key))
             a.triggered.connect(handler)
@@ -484,6 +485,9 @@ class Window(QMainWindow):
         if self.worker:
             return
         self.paused = False
+        self.screen.image = QImage()
+        self.screen.message = 'Starting iOS...'
+        self.screen.update()
         self.worker = Worker(self.settings, self.kernel, self.overlay)
         self.worker.frame.connect(self.new_frame)
         self.worker.state.connect(self.set_state)

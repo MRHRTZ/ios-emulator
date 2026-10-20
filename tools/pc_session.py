@@ -1,5 +1,6 @@
 """Live QEMU framebuffer and bounded HID input for the Windows desktop GUI."""
 import base64
+import hashlib
 import importlib.util
 import json
 import math
@@ -10,6 +11,8 @@ import struct
 import subprocess
 import sys
 import time
+
+from pc_platform import multicore_boot_args
 
 FB_ADDRESS, FB_WIDTH, FB_HEIGHT = 0x9c000000, 1080, 2400
 INPUT_ADDRESS, INPUT_MAGIC, INPUT_SLOTS = 0x9e000000, 0x4e495753, 64
@@ -163,7 +166,7 @@ class PcSession:
         if self.cpu_count > 1:
             # TCG + live framebuffer exports exceed hardware's ~48ms ticket limit.
             # Keep a finite 5s deadlock timeout rather than disabling detection.
-            line += ' slto_us=5000000 tlto_us=5000000'
+            line += ' ' + multicore_boot_args(self.cpu_count)
         subprocess.run([sys.executable, str(self.root/'tools/mkpayload.py'), str(self.kernel), str(tree_path),
                         str(payload_path), '--cmdline', line], check=True, stdout=subprocess.DEVNULL, creationflags=flags)
         payload = payload_path.read_bytes()
@@ -192,12 +195,16 @@ class PcSession:
         if self.network_enabled:
             command += ['-netdev', 'user,id=pcnet', '-device',
                         'virtio-net-device,netdev=pcnet,mac=52:54:00:12:34:56']
+        if self.network_enabled and os.environ.get('IOS_EMULATOR_CAPTURE_NETWORK') == '1':
+            command += ['-object', f'filter-dump,id=pcnetdump,netdev=pcnet,file={qp(self.out/"network.pcap")}']
         self.errors = (self.out/'qemu-errors.log').open('wb')
         self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                         stderr=self.errors, creationflags=flags)
         metadata = {'pid': self.process.pid, 'output': str(self.out), 'qmp_port': self.qmp_port,
                     'input_port': self.input_port, 'cpu_count': self.cpu_count,
-                    'network': self.network_enabled, 'overlay': str(self.overlay), 'kernel': str(self.kernel)}
+                    'network': self.network_enabled, 'overlay': str(self.overlay), 'kernel': str(self.kernel),
+                    'kernel_sha256': hashlib.sha256(self.kernel.read_bytes()).hexdigest(),
+                    'boot_args': line}
         (self.root/'data/gui/active.json').write_text(json.dumps(metadata, indent=2))
         for attempt in range(100):
             try:
