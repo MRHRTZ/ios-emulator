@@ -1,0 +1,45 @@
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -596,6 +596,13 @@
+ 
+ static vm_offset_t vmapple_uart0_base_vaddr = 0;
+ 
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++/* Keep PC serial logging while the iOS framebuffer console is muted. */
++int sweet_pc_serial_active(void);
++int sweet_pc_serial_active(void) { return vmapple_uart0_base_vaddr != 0; }
++#endif
++
++
+ #define PL011_LCR_WORD_LENGTH_8  0x60u
+ #define PL011_LCR_FIFO_DISABLE   0x00u
+ 
+@@ -761,6 +768,9 @@
+ static void
+ fbcon_transmit_data(uint8_t c)
+ {
++	extern int sweet_console_muted;
++	if (sweet_console_muted && !panic_active()) { return; }
++
+ 	if (c == '\r') {
+ 		fbcon_col = 0;
+ 		return;
+--- a/osfmk/console/serial_console.c
++++ b/osfmk/console/serial_console.c
+@@ -267,6 +267,7 @@
+  * @param size The number of characters to print to the console.
+  */
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
++extern int sweet_pc_serial_active(void);
+ extern void sweet_log_append(const char *c, int size);  /* bsd/dev/sweet_ufs.c */
+ /*
+  * Set by AppleCLCD (boot-arg sweetfb_noconsole=1) once the GUI presents:
+@@ -283,7 +284,7 @@
+ 
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
+ 	sweet_log_append(c, size);
+-	if (sweet_console_muted && !panic_active()) {
++	if (sweet_console_muted && !panic_active() && !sweet_pc_serial_active()) {
+ 		return;
+ 	}
+ #endif
