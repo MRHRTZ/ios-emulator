@@ -1,3 +1,13 @@
+## Desktop and network validation continuation (2026-10-20, newest)
+
+- Development stays dev/window-native. Host/UI/docs/tests commitf31c8aa pushed.24 tests PASS. Windows publish window-native remains reserved for actual publication; main untouched.
+-0088 CI39396436902 SUCCESS from731b0cf, kernel SHA75ab8f863fe1712a570a505034727103734cb0b8e820fba350506e3f80abfd3c verified and installed default. Fallback0087/0085 retained. Network patch completeness checked against pre-0088 sources (earlier ad1701b partial-new-file packaging corrected by731b0cf; failed run39396349404 cancelled).
+- New English monochrome icons inspected visually; settings CPU selector4 cores confirmed/saved through native dialog. User RAM4096/FPS10 preserved. GUI0087 run20261020-155219-294500 showed current-day lock screen, Power wake worked; Home swipe acknowledged but unlock not observed (do not claim new home success).
+- FOUR core GUI0088 run20261020-160004-623300: en0 ifnet/IOKit identity attached, zero packets before early Apple services; then scheduler ticket spinlock timeout at~48ms (3million62.5MHz ticks). This is NOT network success. GUI reports panic accurately. Likely TCG/frame-export scheduling latency; host multicore boot args now slto_us/tlto_us=5000000, finite5sec. Retest current restarted GUI; old panic does not establish stable SMP.
+-0089 corrects IOKit IOInterfaceState registered bit from2(opened) to1 per Apple IONetworkInterface.h. Small patch; needs CI. Actual DHCP/default-route/DNS/Safari still unverified. Do not claim internet.
+- Active GUI now reloads source and uses4core settings; read data/gui/active.json for run/PID. Still no packaging/native APFS pipeline work; preserve venv/.
+
+---
 ## Windows platform milestone (2026-10-20, current)
 
 - Branch policy confirmed: development dev/window-native; Windows publish window-native; stable cross-platform main. Current work stays on dev/window-native. The publish branch is reserved until an actual release; no promotion/merge to main performed.

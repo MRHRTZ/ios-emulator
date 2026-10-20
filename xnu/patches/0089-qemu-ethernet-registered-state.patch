@@ -1,0 +1,11 @@
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -114,7 +114,7 @@
+     interface->setProperty("IOInterfaceNamePrefix", "en");
+     interface->setProperty("IOInterfaceUnit", (unsigned long long)0, 32);
+     interface->setProperty("IOInterfaceType", (unsigned long long)6, 32);
+-    interface->setProperty("IOInterfaceState", (unsigned long long)2, 32);
++    interface->setProperty("IOInterfaceState", (unsigned long long)1, 32);
+     interface->setProperty("IOPrimaryInterface", kOSBooleanTrue);
+     interface->setProperty("IOBuiltin", kOSBooleanTrue);
+     interface->setProperty("IOMACAddress", const_cast<uint8_t *>(mac), 6);

@@ -160,6 +160,10 @@ class PcSession:
                 'sweettouch=0 sweetkeys=0 sweetusb=0 sweetlog=0 rd=vioroot0 viorw=1 rootrw=1 '
                 'unentitled_ios_sim_launch=1 ignition_level=1 launchd_unsecure_cache=1 '
                 'wdt=-1 wdt_test=no_user_checkin sweetfb_noconsole=1 sweetfb_hz=30')
+        if self.cpu_count > 1:
+            # TCG + live framebuffer exports exceed hardware's ~48ms ticket limit.
+            # Keep a finite 5s deadlock timeout rather than disabling detection.
+            line += ' slto_us=5000000 tlto_us=5000000'
         subprocess.run([sys.executable, str(self.root/'tools/mkpayload.py'), str(self.kernel), str(tree_path),
                         str(payload_path), '--cmdline', line], check=True, stdout=subprocess.DEVNULL, creationflags=flags)
         payload = payload_path.read_bytes()

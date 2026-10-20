@@ -616,7 +616,7 @@ class Window(QMainWindow):
         form.addRow('CPU cores:', cores)
         form.addRow('iOS Memory (RAM):', ram)
         form.addRow('Screen Refresh Rate:', rate)
-        note = QLabel('Note: Guest changes are stored on the session overlay disk.\nThe base iOS firmware remains clean and untouched.')
+        note = QLabel('Your apps and settings are saved between sessions.')
         note.setStyleSheet('color: #8c909c; font-size: 11px; margin-top: 6px;')
         form.addRow(note)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
