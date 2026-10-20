@@ -295,7 +295,7 @@ def main():
     ap.add_argument('--secs', type=float, default=20, help='Duration to run QEMU in seconds (default: 20)')
     ap.add_argument('--gdb', action='store_true', help='start halted, gdb stub on :1234, no timeout')
     ap.add_argument('--hmp', action='append', default=[], help='extra monitor command run after stop (repeatable), e.g. "x /8gx 0xfffffe..."')
-    ap.add_argument('--cpus', type=int, choices=(1, 2, 4), default=1)
+    ap.add_argument('--cpus', type=int, choices=tuple(range(1, 9)), default=1)
     ap.add_argument('--cpu', default='cortex-a76', help='QEMU CPU model (default: cortex-a76)')
     ap.add_argument('--kernel', help='matching unstripped kernel, for exact framebuffer text decoding (uses llvm-nm)')
     ap.add_argument('--fail-on-panic', action='store_true', help='exit 2 for a visible panic, 3 for incomplete/blank decoding; requires --kernel')

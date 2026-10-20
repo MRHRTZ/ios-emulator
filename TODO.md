@@ -58,7 +58,7 @@ require separate compatibility work, including ARM64e/PAC and kernel ABI.
 - [x] Adapt Aff0 MPIDRs / HVC PSCI; 2/4 CPU test userspace and SGI verified.
 - [ ] Validate 2/4-core GUI responsiveness and clock across Pause/Resume.
 - [x] Verify IPv6 DNS, remote TLS and actual HTTP 200/HTML arrival in Safari.
-- [ ] Verify IPv4 DHCP and route with BPF-enabled kernel0090.
+- [x] Verify IPv4 DHCP and route with BPF-enabled kernel0090.
 - [ ] Fix Safari/WebKit blank content despite successful HTML receipt.
 - [ ] Integrate a guest-compatible GPU/graphics transport and Windows renderer.
 - [ ] Add graphics settings: Auto, Software, Vulkan, OpenGL. Expose accelerated
@@ -94,3 +94,18 @@ must report missing prerequisites honestly, never label the test PID 1 as iOS.
 - Windows publish: `window-native`, promoted only as a release step.
 - Stable cross-platform QEMU: `main`.
 - APFS pipeline and application wrapper/bundling remain deferred.
+
+
+## Desktop follow-up validation
+
+- [x] Auto / Light / Dark themes and themed console; visible FPS text.
+- [x] Menu-only lifecycle controls; icon log toggle above Settings.
+- [x] Stop clears display and rejects queued frames; regression test.
+- [x] Compact hideable status bar and animated loading indicator.
+- [x] Host-aware CPU/RAM/refresh settings within guest limits.
+- [x] Remove extra full frame-interval delay after framebuffer export.
+- [ ] Runtime-verify automatic Home after each fresh boot.
+- [ ] Runtime-verify kernel0091 physical keyboard input and held-key cleanup.
+- [ ] Diagnose Settings black content, wallpaper and Waiting placeholders.
+- [ ] Install and verify a default wallpaper through the guest's wallpaper path.
+- [ ] Add actual UI/guest screenshots to documentation.

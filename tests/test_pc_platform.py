@@ -8,7 +8,7 @@ from pc_session import PcSession,INPUT_MAGIC,INPUT_ADDRESS,map_pointer
 class DeviceTreeTests(unittest.TestCase):
     def test_qemu_topology_roundtrip_and_rtc(self):
         with patch.object(mkadt,'d22ap_product',return_value=None):
-            for count in (1,2,4):
+            for count in range(1,9):
                 tree=adt.parse(adt.serialize(mkadt.build(qemu=True,cpu_count=count)))[0]
                 cpus=next(n for n in tree.children if n.name=='cpus')
                 regs=[struct.unpack('<I',dict((k,v) for k,f,v in n.props)['reg'])[0] for n in cpus.children]
@@ -21,7 +21,7 @@ class DeviceTreeTests(unittest.TestCase):
         self.assertNotIn('sweet-pc-rtc',[n.name for n in tree.children])
         cpus=next(n for n in tree.children if n.name=='cpus')
         self.assertEqual([struct.unpack('<I',dict((k,v) for k,f,v in n.props)['reg'])[0] for n in cpus.children],[i<<8 for i in range(8)])
-        for count in (0,3,8):
+        for count in (0,9,-1):
             with self.assertRaises(ValueError):mkadt.build(qemu=True,cpu_count=count)
 
 class MemoryChannel:
@@ -83,3 +83,55 @@ class EmulationTimeoutTests(unittest.TestCase):
             self.assertEqual(int(values['slto_us']) / 1_000_000, 5)
             self.assertEqual(int(values['tlto_us']) / 1_000_000, 5)
             self.assertEqual(int(values['ml-timeout-lock-panic']) // 1000 / 1_000_000_000, 5)
+
+
+class DesktopInteractionTests(unittest.TestCase):
+    def test_keyboard_mapping_and_capability_guard(self):
+        from emulator_gui import keyboard_usage
+        from PySide6.QtCore import Qt
+        self.assertEqual(keyboard_usage(Qt.Key.Key_A),4)
+        self.assertEqual(keyboard_usage(Qt.Key.Key_0),39)
+        self.assertEqual(keyboard_usage(Qt.Key.Key_Shift),225)
+        self.assertIsNone(keyboard_usage(Qt.Key.Key_unknown))
+        session=PcSession('.');session.input_ready=True;session.qtest=MemoryChannel()
+        session.header=[INPUT_MAGIC,1,0,0,0,0,0,0]
+        with self.assertRaisesRegex(ValueError,'0091'): session.input(3,4,True)
+        session.header[7]=1
+        self.assertTrue(session.input(3,4,True))
+        self.assertIn((3,4),session.held_inputs)
+        self.assertTrue(session.input(3,4,False))
+        self.assertFalse(session.held_inputs)
+
+    def test_stop_clears_screen_and_drops_queued_frames(self):
+        from emulator_gui import Window
+        from PySide6.QtWidgets import QApplication,QToolBar
+        from PySide6.QtGui import QImage
+        from types import SimpleNamespace
+        import threading
+        app=QApplication.instance() or QApplication([])
+        window=Window(auto_start=False)
+        window.worker=SimpleNamespace(stopping=threading.Event())
+        frame=QImage(10,10,QImage.Format.Format_RGB32)
+        window.screen.image=frame
+        window.stop()
+        self.assertTrue(window.screen.image.isNull())
+        self.assertFalse(window.screen.enabled_input)
+        window.new_frame(frame)
+        self.assertTrue(window.screen.image.isNull())
+        self.assertFalse(window.findChildren(QToolBar))
+        window.worker=None;window.close()
+
+    def test_theme_contrast_and_menu_choices(self):
+        from emulator_gui import Window
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QPalette
+        app=QApplication.instance() or QApplication([])
+        window=Window(auto_start=False)
+        for mode in ('Light','Dark','Auto'):
+            window.settings['theme']=mode;window.apply_theme()
+            self.assertEqual(window.fps_label.palette().color(QPalette.ColorRole.WindowText),
+                             window.palette().color(QPalette.ColorRole.WindowText))
+        self.assertEqual({a.text() for a in window.theme_group.actions()},{'Auto','Light','Dark'})
+        self.assertTrue(window.log_button.isCheckable())
+        self.assertTrue(window.home.toolTip())
+        window.close()

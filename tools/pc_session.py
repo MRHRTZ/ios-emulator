@@ -115,8 +115,8 @@ class PcSession:
         import adt
         import mkadt
         import root_builder
-        if self.cpu_count not in (1, 2, 4):
-            raise ValueError('CPU count must be 1, 2, or 4')
+        if self.cpu_count not in tuple(range(1, 9)):
+            raise ValueError('CPU count must be between 1 and 8')
         if not 256 <= self.memory_mib <= 4096:
             raise ValueError('RAM must be between 256 and 4096 MiB')
         base = self.root / 'data/root/ios-root.img'
@@ -268,8 +268,10 @@ class PcSession:
     def input(self, kind, code, down, x=0, y=0):
         if not self.input_ready:
             return False
-        if kind not in (1, 2) or not 0 <= code < (10 if kind == 1 else 4):
+        if kind not in (1, 2, 3) or not 0 <= code < ({1:10,2:4,3:232}[kind]) or (kind == 3 and code < 4):
             raise ValueError('Invalid HID event')
+        if kind == 3 and (not self.header or not self.header[7]&1):
+            raise ValueError('This guest kernel does not support PC keyboard input (0091 required).')
         if not (0 <= x < FB_WIDTH and 0 <= y < FB_HEIGHT):
             raise ValueError('Touch lies outside the iOS screen')
         _, _, head, tail, *_ = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))

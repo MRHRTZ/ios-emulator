@@ -1,11 +1,30 @@
 # ios-emulator
 
-Experimental PC emulation of the XNU/iOS environment derived from `ios-sweet`.
-The initial host target is **native Windows x64 with QEMU ARM64 emulation**.
+An **experimental, educational and research project** exploring real iOS
+userspace on a patched open-source XNU kernel under QEMU. Native Windows x64
+is the current development target. This is an incomplete emulator with known
+compatibility and performance limits.
 
-The project runs **real iOS 16.7.16 Apple userspace and a live touch-controlled home screen** on native Windows QEMU. It remains experimental: hardware services and applications have compatibility gaps. The separate minimal PID 1 mode is only a kernel test.
-The source was originally built for a Redmi Note 10 Pro; hardware-specific
-drivers and historical claims about phone boot do not establish PC support.
+This independent project is **not affiliated with, endorsed by, sponsored by,
+or developed in cooperation with Apple Inc.** Apple, iPhone, iOS and related
+names are trademarks of their respective owners. Apple firmware and filesystem
+images are downloaded separately and are not included in this repository.
+Third-party components retain their own licenses.
+
+## Observed status
+
+- Real iOS 16.7.16 / iPhone X SpringBoard home screen, touch, side buttons and
+  on-screen keyboard have been observed on native Windows QEMU.
+- Host UTC clock, 2/4-core boot, virtio block storage, IPv6 DNS/TLS/HTTP, and
+  IPv4 DHCP/default route have been verified in recorded tests.
+- Safari can receive real HTML while displaying a **white content area**.
+  Settings, wallpaper and widgets also have rendering/service gaps.
+- PC keyboard support is in development; GPU acceleration, reliable app
+  compatibility, native APFS preparation and application bundling are unfinished.
+
+See [development status and checklist progress](docs/STATUS.md) for evidence
+and pending checks. A booting kernel or a successful download is not a complete
+iPhone implementation.
 
 ## Start on Windows
 
@@ -17,30 +36,26 @@ python emulator.py extract
 python emulator.py device-tree
 python emulator.py probe-root
 python emulator.py run --test
-# After preparing the root and installing PySide6:
+# Once a matching kernel and prepared root exist:
+python -m pip install PySide6
 python emulator.py gui
-python emulator.py status
 ```
 
-Development: `dev/window-native`; Windows publication: `window-native`; stable cross-platform QEMU: `main`. Wrapper/bundling comes after emulator validation.
+`run --test` runs a minimal custom PID 1, not Apple's userspace.
+Root preparation and kernel requirements are explained in the setup guides.
 
-See [Desktop GUI](docs/GUI.md), [CLI commands](docs/CLI.md), [TODO list](TODO.md), and [Windows setup and boot commands](docs/WINDOWS.md) for dependencies,
-kernel provenance, generated artifacts, limitations, and next steps.
+## Documentation
 
-The Windows runner supports automatic QEMU discovery, loopback TCP QMP,
-Windows paths, TCG, and cleanup of the emulator after failures.
+- [Windows setup](docs/WINDOWS.md) and [CLI reference](docs/CLI.md)
+- [Desktop UI, controls and settings](docs/GUI.md)
+- [How the port works and integrated systems](docs/ARCHITECTURE.md)
+- [Verified status, known issues and checklist percentage](docs/STATUS.md)
+- [Full TODO list](TODO.md)
+- [GPU / Vulkan / OpenGL integration plan](docs/GRAPHICS.md)
+- [Screenshots and evidence requirements](docs/SCREENSHOTS.md)
+- [Engineering checkpoint and history](NOTES.md)
+- [Original phone-port reference](docs/PHONE_PORT_REFERENCE.md)
 
-## What is included
-
-- `tools/`: Python payload/ADT builders and the QEMU test runner.
-- `xnu/patches/`: patches for Apple's open-source XNU kernel.
-- `.github/workflows/xnu.yml`: macOS kernel build workflow.
-- `shim/`: historical phone boot shim, not required by the host QEMU runner.
-- `NOTES.md`: observations, handoff, and historical engineering notes.
-
-Neither the kernel build artifact nor the iOS filesystem is tracked in Git.
-iOS userland comes from Apple's iPhone X IPSW and requires extraction and
-image preparation. Kernel smoke tests do not require that full firmware.
-
-The original project's phone-specific README is preserved as
-[historical reference](docs/PHONE_PORT_REFERENCE.md).
+Development: **dev/window-native**. Windows releases: **window-native**.
+Stable cross-platform QEMU: **main**. Development is not automatically promoted
+to release/stable. Wrapper/installer comes after emulator validation.

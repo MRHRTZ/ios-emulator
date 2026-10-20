@@ -1,11 +1,11 @@
 """Host-independent QEMU guest policy shared by CLI and desktop frontend."""
-CPU_COUNTS = (1, 2, 4)
+CPU_COUNTS = tuple(range(1, 9))
 LOCK_TIMEOUT_SECONDS = 5
 
 
 def multicore_boot_args(cpu_count):
     if cpu_count not in CPU_COUNTS:
-        raise ValueError('CPU count must be 1, 2, or 4')
+        raise ValueError('CPU count must be between 1 and 8')
     if cpu_count == 1:
         return ''
     # XNU arm64 machine_routines.c legacy slto_us/tlto_us use microseconds.

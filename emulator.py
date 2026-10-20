@@ -285,7 +285,7 @@ def main():
     mode.add_argument('--root-image', help='Small prepared RAM root')
     mode.add_argument('--disk-image', help='Prepared HFS+ root block image (per-run overlay)')
     mode.add_argument('--test', action='store_true', help='Run the minimal test PID 1, not Apple iOS')
-    boot.add_argument('--cpus', type=int, choices=(1, 2, 4), default=1)
+    boot.add_argument('--cpus', type=int, choices=tuple(range(1, 9)), default=1)
     boot.add_argument('--network', action='store_true', help='Enable outbound virtual Ethernet/NAT')
     boot.add_argument('--kernel')
     boot.add_argument('--qemu')

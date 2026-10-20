@@ -14,7 +14,10 @@ the single-application distribution/installer is a later milestone.
 The English interface uses native Qt Windows controls, menus, settings and file
 dialogs, with a dark icon sidebar. Sidebar labels appear on hover; the touch
 display never shows a tooltip. Click for touch, drag to swipe, and type using
-the iOS on-screen keyboard. Host text typing is not bridged yet.
+the iOS on-screen keyboard. Kernel 0091 adds PC keyboard capture: click the
+iOS display to focus it, and toggle the keyboard sidebar button. Focus loss,
+Pause and Stop release held keys. Current mapping covers a US physical layout;
+IME/composed text is not implemented.
 
 | Control | Shortcut |
 | --- | --- |
@@ -29,8 +32,9 @@ the iOS on-screen keyboard. Host text typing is not bridged yet.
 | Fullscreen | F11 |
 | Restart | F5 |
 
-Stop the emulator before changing CPU (1/2/4), RAM (1–4 GiB), or refresh target
-(5–30 fps). ARM64 runs through TCG on x64; actual speed and FPS depend on host
+Stop the emulator before changing CPU, RAM, or refresh target. Resource limits
+follow host capacity (80% budget) and the guest cap: 4 GiB RAM / 8 CPUs.
+5â€“8 CPUs are experimental; refresh targets are limited by the host display. ARM64 runs through TCG on x64; actual speed and FPS depend on host
 load. Selecting more cores does not guarantee proportional speed increases.
 The CPU, device tree and boot arguments are configured together.
 
@@ -61,3 +65,17 @@ five-second timeout to accommodate TCG/frame-export scheduling.
 For local network diagnosis only, set `IOS_EMULATOR_CAPTURE_NETWORK=1` before
 starting the GUI to save guest packets to its run directory as `network.pcap`.
 Captures are disabled by default and stay in ignored local runtime data.
+
+
+## Window appearance
+
+Emulator > Start / Pause / Stop / Restart owns the lifecycle controls; there
+is no top control toolbar. Disabled commands and sidebar buttons are dimmed.
+Logs is a checked icon immediately above Settings. View > Theme offers Auto,
+Light and Dark, including the console. View > Show Status Bar defaults on and
+persists. The compact status bar uses a spinner while loading and shows actual
+frame-export FPS in the foreground theme color.
+
+Stop immediately blanks the display and rejects queued frames while QEMU exits.
+Automatic Home is sent once after a colored lock/home screen is detected,
+avoiding an input during the initial black/Apple boot frame.

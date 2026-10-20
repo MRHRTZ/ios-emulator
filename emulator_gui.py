@@ -1,4 +1,6 @@
 """Native Windows controls around the live iOS framebuffer; MuMu-style sidebar and English UI."""
+import os
+import ctypes
 import heapq
 import json
 from pathlib import Path
@@ -8,10 +10,10 @@ import threading
 import time
 
 from PySide6.QtCore import Qt, QEvent, QPointF, QRectF, QSize, Signal, QObject, QTimer
-from PySide6.QtGui import QAction, QColor, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap, QPolygonF, QTransform
+from PySide6.QtGui import QAction, QActionGroup, QPalette, QColor, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap, QPolygonF, QTransform
 from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QDialogButtonBox,
     QDockWidget, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QPlainTextEdit, QProgressBar, QSizePolicy, QStyle, QStyleFactory, QToolBar,
+    QPlainTextEdit, QSpinBox, QSizePolicy, QStyle, QStyleFactory, QToolBar,
     QToolButton, QToolTip, QVBoxLayout, QWidget)
 
 ROOT = Path(__file__).resolve().parent
@@ -20,13 +22,13 @@ sys.path.insert(0, str(ROOT / 'data/python-deps'))
 from pc_session import PcSession, FB_WIDTH, FB_HEIGHT, map_pointer
 
 
-def control_icon(name):
+def control_icon(name, color="#d9dce5"):
     """Clear monochrome control glyphs on the dark native Qt button surfaces."""
     pixmap = QPixmap(24, 24)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(QPen(QColor('#d9dce5'), 1.7, Qt.PenStyle.SolidLine,
+    painter.setPen(QPen(QColor(color), 1.7, Qt.PenStyle.SolidLine,
                         Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     def lines(points):
         painter.drawPolyline(QPolygonF([QPointF(x, y) for x, y in points]))
@@ -57,6 +59,14 @@ def control_icon(name):
             painter.drawLine(3, y, 21, y)
             painter.setBrush(QColor('#1a1b20'))
             painter.drawEllipse(QRectF(x-2, y-2, 4, 4))
+    elif name == 'Logs':
+        painter.drawRoundedRect(QRectF(4, 3, 16, 18), 2, 2)
+        for y in (8, 12, 16): painter.drawLine(8, y, 17, y)
+    elif name == 'Keyboard':
+        painter.drawRoundedRect(QRectF(2, 6, 20, 13), 2, 2)
+        for x in (6, 10, 14, 18):
+            for y in (10, 13): painter.drawPoint(x, y)
+        painter.drawLine(7, 16, 17, 16)
     elif name == 'Start':
         lines([(7, 4), (19, 12), (7, 20), (7, 4)])
     elif name == 'Pause':
@@ -141,7 +151,7 @@ class Worker(QObject):
                     self.frame.emit(image)
                     frames += 1
                     interval = 2. if self.session.stage == 'booting' else (.5 if self.session.stage in ('services', 'springboard') else 1 / self.settings['fps'])
-                    next_frame = time.monotonic() + interval
+                    next_frame = max(now + interval, time.monotonic())
                 if now - measured >= 2:
                     fps = frames / (now - measured)
                     frames = 0
@@ -160,6 +170,7 @@ class Worker(QObject):
 
 class Screen(QWidget):
     touch = Signal(bool, int, int)
+    keyboard = Signal(int, bool)
 
     def __init__(self):
         super().__init__()
@@ -169,6 +180,8 @@ class Screen(QWidget):
         self.enabled_input = False
         self.last = (540, 1200)
         self.last_move = 0
+        self.capture_keyboard = True
+        self.held_keys = {}
         self.message = 'Click Start to boot iOS'
         self.setMinimumSize(270, 430)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -232,9 +245,79 @@ class Screen(QWidget):
             self.releaseMouse()
             self.touch.emit(False, *self.last)
 
+    def release_keys(self):
+        for usage in self.held_keys.values(): self.keyboard.emit(usage, False)
+        self.held_keys.clear()
+
+    def keyPressEvent(self, event):
+        if self.enabled_input and self.capture_keyboard:
+            usage = keyboard_usage(event.key())
+            if usage:
+                if not event.isAutoRepeat() and event.key() not in self.held_keys:
+                    self.held_keys[event.key()] = usage
+                    self.keyboard.emit(usage, True)
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.key() in self.held_keys:
+            if not event.isAutoRepeat(): self.keyboard.emit(self.held_keys.pop(event.key()), False)
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
+
     def focusOutEvent(self, event):
         self.release_touch()
+        self.release_keys()
         super().focusOutEvent(event)
+
+
+def keyboard_usage(key):
+    if Qt.Key.Key_A <= key <= Qt.Key.Key_Z: return 4 + key - Qt.Key.Key_A
+    if Qt.Key.Key_1 <= key <= Qt.Key.Key_9: return 30 + key - Qt.Key.Key_1
+    return {Qt.Key.Key_0:39, Qt.Key.Key_Return:40, Qt.Key.Key_Enter:40,
+        Qt.Key.Key_Escape:41, Qt.Key.Key_Backspace:42, Qt.Key.Key_Tab:43,
+        Qt.Key.Key_Space:44, Qt.Key.Key_Minus:45, Qt.Key.Key_Equal:46,
+        Qt.Key.Key_BracketLeft:47, Qt.Key.Key_BracketRight:48,
+        Qt.Key.Key_Backslash:49, Qt.Key.Key_Semicolon:51, Qt.Key.Key_Apostrophe:52,
+        Qt.Key.Key_QuoteLeft:53, Qt.Key.Key_Comma:54, Qt.Key.Key_Period:55,
+        Qt.Key.Key_Slash:56, Qt.Key.Key_CapsLock:57, Qt.Key.Key_Delete:76,
+        Qt.Key.Key_Home:74, Qt.Key.Key_End:77, Qt.Key.Key_PageUp:75, Qt.Key.Key_PageDown:78,
+        Qt.Key.Key_Right:79, Qt.Key.Key_Left:80, Qt.Key.Key_Down:81, Qt.Key.Key_Up:82,
+        Qt.Key.Key_Control:224, Qt.Key.Key_Shift:225, Qt.Key.Key_Alt:226}.get(key)
+
+
+def host_limits():
+    total = 8 * 1024
+    if os.name == 'nt':
+        class Memory(ctypes.Structure):
+            _fields_ = [('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(n,ctypes.c_ulonglong) for n in
+                ('total','available','page','page_available','virtual','virtual_available','extended')]
+        memory=Memory();memory.length=ctypes.sizeof(memory)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memory)): total=memory.total//1048576
+    elif hasattr(os, 'sysconf'):
+        total=os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES')//1048576
+    # Reserve host RAM and QEMU's low-address region; guest ABI currently validated to 4 GiB.
+    budget=max(1024, int(total*.8)-1792)
+    cores=max(1,min(8, int((os.cpu_count() or 1)*.8)))
+    screen=QApplication.primaryScreen()
+    return {'host_mib':total,'budget_mib':budget,'memory_mib':min(4096,budget)//256*256,
+            'cpu_count':cores,'fps':max(30,min(240,round(screen.refreshRate()) if screen else 60))}
+
+
+class Spinner(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent); self.angle=0; self.setFixedSize(16,16)
+        self.timer=QTimer(self);self.timer.setInterval(60);self.timer.timeout.connect(self.tick)
+        self.setAccessibleName('Loading')
+    def tick(self): self.angle=(self.angle+30)%360;self.update()
+    def showEvent(self,event): self.timer.start();super().showEvent(event)
+    def hideEvent(self,event): self.timer.stop();super().hideEvent(event)
+    def paintEvent(self,event):
+        painter=QPainter(self);painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(self.palette().color(QPalette.ColorRole.Highlight),2,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+        painter.drawArc(QRectF(3,3,10,10),self.angle*16,240*16)
 
 
 class Window(QMainWindow):
@@ -249,16 +332,23 @@ class Window(QMainWindow):
         self.restarting = False
         self.kernel, self.overlay = kernel, overlay
         self.settings_path = ROOT / 'data/gui/settings.json'
-        self.settings = {'memory_mib': 2048, 'fps': 15, 'cpu_count': 1}
+        self.limits = host_limits()
+        self.settings = {'memory_mib': 2048, 'fps': 15, 'cpu_count': 1, 'theme': 'Auto', 'status_bar': True}
+        self.stage = 'stopped'
+        self.stopping = False
+        self.auto_home_pending = True
+        self.buttons = []
         if self.settings_path.exists():
             try:
                 saved = json.loads(self.settings_path.read_text())
-                if saved.get('cpu_count') in (1, 2, 4):
+                if saved.get('cpu_count') in range(1, self.limits['cpu_count']+1):
                     self.settings['cpu_count'] = saved['cpu_count']
-                if saved.get('memory_mib') in (1024, 2048, 3072, 4096):
+                if isinstance(saved.get('memory_mib'), int) and 1024 <= saved['memory_mib'] <= self.limits['memory_mib']:
                     self.settings['memory_mib'] = saved['memory_mib']
-                if saved.get('fps') in (5, 10, 15, 20, 30):
+                if isinstance(saved.get('fps'), int) and 5 <= saved['fps'] <= self.limits['fps']:
                     self.settings['fps'] = saved['fps']
+                self.settings['theme'] = saved.get('theme', 'Auto') if saved.get('theme') in ('Auto','Light','Dark') else 'Auto'
+                self.settings['status_bar'] = bool(saved.get('status_bar',True))
             except (OSError, ValueError):
                 pass
 
@@ -266,6 +356,7 @@ class Window(QMainWindow):
 
         self.screen = Screen()
         self.screen.touch.connect(self.touch)
+        self.screen.keyboard.connect(self.keyboard)
 
         center = QWidget()
         layout = QHBoxLayout(center)
@@ -297,33 +388,32 @@ class Window(QMainWindow):
 
         self.add_sidebar_separator(rail)
 
-        self.side_button(rail, 'Screenshot', 'Save Screenshot (Ctrl+S)', self.screenshot, QStyle.StandardPixmap.SP_DialogSaveButton, False)
-        self.side_button(rail, 'Rotate', 'Rotate Screen 90° (Ctrl+R)', self.rotate, QStyle.StandardPixmap.SP_BrowserReload, False)
+        self.screenshot_button = self.side_button(rail, 'Screenshot', 'Save Screenshot (Ctrl+S)', self.screenshot, QStyle.StandardPixmap.SP_DialogSaveButton, False)
+        self.side_button(rail, 'Rotate', 'Rotate Screen 90Â° (Ctrl+R)', self.rotate, QStyle.StandardPixmap.SP_BrowserReload, False)
         self.side_button(rail, 'Fullscreen', 'Full Screen (F11)', self.fullscreen, QStyle.StandardPixmap.SP_TitleBarMaxButton, False)
 
         rail.addStretch(1)
 
+        self.keyboard_action = QAction('Capture Keyboard', self, checkable=True, checked=True)
+        self.keyboard_action.toggled.connect(self.capture_keyboard)
+        self.keyboard_button = self.side_button(rail, 'Keyboard', 'Capture PC Keyboard (click the iOS display to type)', None, None, False)
+        self.keyboard_button.setDefaultAction(self.keyboard_action)
+        self.keyboard_button.setText('')
+        self.keyboard_button.setToolTip('Capture PC Keyboard (click the iOS display to type)')
+        self.log_action = QAction('Logs', self, checkable=True)
+        self.log_action.triggered.connect(lambda checked: self.log_dock.setVisible(checked))
+        self.log_button = self.side_button(rail, 'Logs', 'Show / Hide Logs', None, None, False)
+        self.log_button.setDefaultAction(self.log_action)
+        self.log_button.setText('')
+        self.log_button.setToolTip('Show / Hide Logs')
         self.settings_button = self.side_button(rail, 'Settings', 'Settings (CPU, Memory & Refresh Rate)', self.preferences, QStyle.StandardPixmap.SP_ComputerIcon, False)
         layout.addWidget(sidebar_frame)
         self.setCentralWidget(center)
 
-        toolbar = QToolBar('Controls')
-        toolbar.setMovable(False)
-        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.addToolBar(toolbar)
-
-        self.start_action = self.action('Start', self.start, QStyle.StandardPixmap.SP_MediaPlay, 'Ctrl+Return')
-        self.pause_action = self.action('Pause', self.pause, QStyle.StandardPixmap.SP_MediaPause, 'Ctrl+P')
-        self.stop_action = self.action('Stop', self.stop, QStyle.StandardPixmap.SP_MediaStop)
-        self.restart_action = self.action('Restart', self.restart, QStyle.StandardPixmap.SP_BrowserReload, 'F5')
-        for action in (self.start_action, self.pause_action, self.stop_action, self.restart_action):
-            toolbar.addAction(action)
-
-        self.log_action = QAction('Logs', self, checkable=True)
-        self.log_action.triggered.connect(lambda checked: self.log_dock.setVisible(checked))
-        toolbar.addSeparator()
-        toolbar.addAction(self.log_action)
-
+        self.start_action = self.action('Start', self.start, None, 'Ctrl+Return')
+        self.pause_action = self.action('Pause', self.pause, None, 'Ctrl+P')
+        self.stop_action = self.action('Stop', self.stop, None)
+        self.restart_action = self.action('Restart', self.restart, None, 'F5')
         menu = self.menuBar().addMenu('&Emulator')
         for a in (self.start_action, self.pause_action, self.stop_action, self.restart_action):
             menu.addAction(a)
@@ -333,10 +423,20 @@ class Window(QMainWindow):
         menu.addAction('Exit', self.close, QKeySequence('Alt+F4'))
 
         view = self.menuBar().addMenu('&View')
-        view.addAction('Save Screenshot...', self.screenshot, QKeySequence('Ctrl+S'))
+        self.screenshot_action=view.addAction('Save Screenshot...', self.screenshot, QKeySequence('Ctrl+S'))
         view.addAction('Rotate Screen', self.rotate, QKeySequence('Ctrl+R'))
         view.addAction('Full Screen', self.fullscreen, QKeySequence('F11'))
         view.addAction(self.log_action)
+        view.addAction(self.keyboard_action)
+        self.status_action = QAction('Show Status Bar',self,checkable=True,checked=self.settings['status_bar'])
+        self.status_action.toggled.connect(self.show_status_bar)
+        view.addAction(self.status_action)
+        theme_menu=view.addMenu('Theme')
+        self.theme_group=QActionGroup(self);self.theme_group.setExclusive(True)
+        for theme in ('Auto','Light','Dark'):
+            action=QAction(theme,self,checkable=True,checked=theme==self.settings['theme'])
+            action.triggered.connect(lambda checked,t=theme:self.change_theme(t))
+            self.theme_group.addAction(action);theme_menu.addAction(action)
 
         help_menu = self.menuBar().addMenu('&Help')
         help_menu.addAction('Controls & Shortcuts', self.help)
@@ -351,16 +451,18 @@ class Window(QMainWindow):
         self.log_dock.hide()
         self.log_dock.visibilityChanged.connect(self.log_action.setChecked)
 
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 0)
-        self.progress.setFixedWidth(85)
+        self.progress = Spinner()
         self.progress.hide()
         self.statusBar().addPermanentWidget(self.progress)
-
         self.fps_label = QLabel('')
+        self.fps_label.setObjectName('fpsLabel')
         self.statusBar().addPermanentWidget(self.fps_label)
-
-        for key, handler in [('F1', self.go_home), ('Escape', self.go_home), ('F2', lambda: self.key_click(0)),
+        self.statusBar().setSizeGripEnabled(False)
+        self.statusBar().setFixedHeight(22)
+        self.statusBar().setVisible(self.settings['status_bar'])
+        QApplication.styleHints().colorSchemeChanged.connect(lambda _:self.apply_theme())
+        self.apply_theme()
+        for key, handler in [('F1', self.go_home), ('F2', lambda: self.key_click(0)),
                              ('F3', lambda: self.key_click(2)), ('F4', lambda: self.key_click(1)),
                              ('F6', lambda: self.key_click(3))]:
             a = QAction(self)
@@ -372,89 +474,62 @@ class Window(QMainWindow):
         if auto_start:
             QTimer.singleShot(250, self.start)
 
+    def save_settings(self):
+        self.settings_path.parent.mkdir(parents=True,exist_ok=True)
+        self.settings_path.write_text(json.dumps(self.settings,indent=2))
+
+    def change_theme(self, theme):
+        self.settings['theme']=theme;self.apply_theme();self.save_settings()
+
+    def show_status_bar(self, visible):
+        self.statusBar().setVisible(visible);self.settings['status_bar']=visible;self.save_settings()
+
     def apply_theme(self):
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #121316;
-            }
-            QToolBar {
-                background-color: #1a1b20;
-                border-bottom: 1px solid #2a2d36;
-                spacing: 6px;
-                padding: 3px 8px;
-            }
-            QToolBar QToolButton {
-                color: #e2e4ea;
-                background-color: transparent;
-                border: 1px solid transparent;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 12px;
-            }
-            QToolBar QToolButton:hover {
-                background-color: #2b2e38;
-                border-color: #3d414e;
-            }
-            QToolBar QToolButton:pressed {
-                background-color: #3b3e4a;
-            }
-            QMenuBar {
-                background-color: #1a1b20;
-                color: #d1d4dc;
-                border-bottom: 1px solid #25272e;
-            }
-            QMenuBar::item:selected {
-                background-color: #2b2e38;
-            }
-            QMenu {
-                background-color: #1f2026;
-                color: #e2e4ea;
-                border: 1px solid #333642;
-                padding: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #2e313c;
-                border-radius: 4px;
-            }
-            QStatusBar {
-                background-color: #16171b;
-                color: #9ba0ad;
-                border-top: 1px solid #23252c;
-            }
-            #mumuSidebar {
-                background-color: #1a1b20;
-                border: 1px solid #2a2d36;
-                border-radius: 8px;
-            }
-            #mumuSidebar QToolButton {
-                background-color: transparent;
-                border: none;
-                border-radius: 6px;
-            }
-            #mumuSidebar QToolButton:hover {
-                background-color: #2f323e;
-            }
-            #mumuSidebar QToolButton:pressed {
-                background-color: #404452;
-            }
-            #mumuSidebar QToolButton:disabled {
-                background-color: #16171b;
-            }
-            QToolTip {
-                background-color: #22242c;
-                color: #ffffff;
-                border: 1px solid #3d414f;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 11px;
-            }
+        mode=self.settings['theme']
+        dark=mode=='Dark' or (mode=='Auto' and QApplication.styleHints().colorScheme()==Qt.ColorScheme.Dark)
+        bg,panel,fg,muted,border,hover=('#121316','#1a1b20','#e2e4ea','#9399a6','#343844','#303747') if dark else ('#f5f5f7','#ffffff','#242832','#8b9099','#d3d7df','#e6ebf4')
+        self.foreground=fg
+        palette=QPalette()
+        for role,value in ((QPalette.ColorRole.Window,bg),(QPalette.ColorRole.WindowText,fg),
+            (QPalette.ColorRole.Base,panel),(QPalette.ColorRole.AlternateBase,bg),
+            (QPalette.ColorRole.Text,fg),(QPalette.ColorRole.Button,panel),
+            (QPalette.ColorRole.ButtonText,fg),(QPalette.ColorRole.ToolTipBase,panel),
+            (QPalette.ColorRole.ToolTipText,fg),(QPalette.ColorRole.Highlight,'#438bea'),
+            (QPalette.ColorRole.HighlightedText,'#ffffff')):
+            palette.setColor(role,QColor(value))
+            palette.setColor(QPalette.ColorGroup.Disabled,role,QColor(muted))
+        self.setPalette(palette)
+        self.setStyleSheet(f"""
+            QWidget {{ color: {fg}; }}
+            QMainWindow, QDialog {{ background: {bg}; }}
+            QMenuBar, QMenu, QDockWidget, QStatusBar {{ background: {panel}; color: {fg}; }}
+            QMenu::item:selected, QMenuBar::item:selected {{ background: {hover}; }}
+            QMenu::item:disabled, QWidget:disabled {{ color: {muted}; }}
+            QPlainTextEdit, QComboBox, QSpinBox {{ background: {panel}; color: {fg}; border: 1px solid {border}; }}
+            QStatusBar {{ border-top: 1px solid {border}; }}
+            QStatusBar QLabel {{ color: {fg}; padding: 0 4px; }}
+            #sidebarSeparator {{ background: {border}; color: {border}; }}
+            #mumuSidebar {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
+            #mumuSidebar QToolButton {{ background: transparent; border: 1px solid transparent; border-radius: 6px; }}
+            #mumuSidebar QToolButton:hover:enabled {{ background: {hover}; }}
+            #mumuSidebar QToolButton:checked:enabled {{ background: {hover}; border: 1px solid #438bea; }}
+            #mumuSidebar QToolButton:pressed {{ background: {border}; }}
+            QToolTip {{ background: {panel}; color: {fg}; border: 1px solid {border}; padding: 5px; }}
         """)
+        for button in getattr(self,'buttons',[]):
+            icon=control_icon(button.accessibleName(),fg)
+            disabled=control_icon(button.accessibleName(),muted).pixmap(QSize(24,24))
+            icon.addPixmap(disabled,QIcon.Mode.Disabled)
+            button.setIcon(icon)
+        for action in (getattr(self,'log_action',None),getattr(self,'keyboard_action',None)):
+            if action: action.setIcon(control_icon('Logs' if action==getattr(self,'log_action',None) else 'Keyboard',fg))
 
     def add_sidebar_separator(self, layout):
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFrameShadow(QFrame.Shadow.Sunken)
-        line.setStyleSheet('background-color: #2a2d36; max-height: 1px; margin: 2px 2px;')
+        line.setObjectName('sidebarSeparator')
+        line.setStyleSheet('max-height: 1px; margin: 2px 2px;')
         layout.addWidget(line)
 
     def action(self, text, callback, icon, shortcut=None):
@@ -468,6 +543,7 @@ class Window(QMainWindow):
         button = QToolButton()
         button.setText('')  # MuMu-style icon only
         button.setAccessibleName(text)
+        button.setToolTipDuration(10000)
         button.setToolTip(tooltip)  # Popup tooltip on hover
         button.setIcon(control_icon(text))
         button.setIconSize(QSize(22, 22))
@@ -479,12 +555,15 @@ class Window(QMainWindow):
         if input_button:
             self.input_buttons.append(button)
         layout.addWidget(button)
+        self.buttons.append(button)
         return button
 
     def start(self):
         if self.worker:
             return
         self.paused = False
+        self.stopping = False
+        self.auto_home_pending = True
         self.screen.image = QImage()
         self.screen.message = 'Starting iOS...'
         self.screen.update()
@@ -497,6 +576,17 @@ class Window(QMainWindow):
         self.worker.thread.start()
 
     def new_frame(self, image):
+        if self.stopping or not self.worker: return
+        # Auto-Home once the colored lock screen is visible, not at first black/Apple frame.
+        if self.auto_home_pending and self.stage=='display':
+            colorful=0
+            for y in range(20, image.height()//3, 35):
+                for x in range(20,image.width(),35):
+                    c=image.pixelColor(x,y)
+                    colorful += max(c.red(),c.green(),c.blue())-min(c.red(),c.green(),c.blue())>30
+            if colorful>=8:
+                self.auto_home_pending=False
+                QTimer.singleShot(700,self.go_home)
         self.screen.image = image
         self.screen.update()
 
@@ -504,13 +594,21 @@ class Window(QMainWindow):
         self.logs.appendPlainText(text.rstrip())
 
     def set_state(self, stage, input_ready, fps):
+        if self.stopping and stage != 'stopped': return
+        self.stage=stage
         active = stage != 'stopped'
         self.start_action.setEnabled(not active)
-        self.pause_action.setEnabled(active and stage != 'starting')
+        self.pause_action.setEnabled(active and stage in ('display','paused'))
         self.stop_action.setEnabled(active)
         self.restart_action.setEnabled(active)
         self.settings_button.setEnabled(not active)
-        self.screen.enabled_input = active and input_ready and stage not in ('paused', 'panic')
+        self.screen.enabled_input = active and input_ready and stage == 'display'
+        self.screenshot_button.setEnabled(active and not self.screen.image.isNull())
+        self.screenshot_action.setEnabled(active and not self.screen.image.isNull())
+        keyboard_ready = bool(self.worker and self.worker.session and self.worker.session.header and self.worker.session.header[7]&1)
+        self.keyboard_action.setEnabled(self.screen.enabled_input and keyboard_ready)
+        self.keyboard_button.setEnabled(self.screen.enabled_input and keyboard_ready)
+        self.screen.capture_keyboard = self.keyboard_action.isChecked() and keyboard_ready
         for b in self.input_buttons:
             b.setEnabled(self.screen.enabled_input)
         messages = {
@@ -530,6 +628,7 @@ class Window(QMainWindow):
     def pause(self):
         if self.worker:
             self.screen.release_touch()
+            self.screen.release_keys()
             self.paused = not self.paused
             self.worker.submit('pause', self.paused)
             self.pause_action.setText('Resume' if self.paused else 'Pause')
@@ -537,6 +636,12 @@ class Window(QMainWindow):
     def stop(self):
         if self.worker:
             self.screen.release_touch()
+            self.screen.release_keys()
+            self.stopping=True
+            self.screen.enabled_input=False
+            self.screen.image=QImage();self.screen.message='';self.screen.update()
+            for button in self.input_buttons+[self.keyboard_button,self.screenshot_button]: button.setEnabled(False)
+            for action in (self.start_action,self.pause_action,self.stop_action,self.restart_action,self.keyboard_action,self.screenshot_action): action.setEnabled(False)
             self.worker.stopping.set()
             self.statusBar().showMessage('Stopping emulator...')
 
@@ -547,6 +652,8 @@ class Window(QMainWindow):
 
     def finished(self, error):
         self.worker = None
+        self.stopping = False
+        self.screen.image=QImage();self.screen.message='';self.screen.update()
         self.paused = False
         self.pause_action.setText('Pause')
         self.set_state('stopped', False, 0)
@@ -561,6 +668,14 @@ class Window(QMainWindow):
     def touch(self, down, x, y):
         if self.worker:
             self.worker.submit('input', 1, 0, down, x, y)
+
+    def capture_keyboard(self, enabled):
+        self.screen.release_keys();self.screen.capture_keyboard=enabled
+        if enabled:self.screen.setFocus()
+
+    def keyboard(self, usage, down):
+        if self.worker and not self.stopping:
+            self.worker.submit('input',3,usage,down,0,0)
 
     def key(self, code, down):
         if self.worker and self.screen.enabled_input:
@@ -607,49 +722,44 @@ class Window(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle('Emulator Settings')
         form = QFormLayout(dialog)
-        ram = QComboBox()
-        for value in (1024, 2048, 3072, 4096):
-            ram.addItem(f'{value // 1024} GB', value)
-        ram.setCurrentIndex(ram.findData(self.settings['memory_mib']))
-        rate = QComboBox()
-        for value in (5, 10, 15, 20, 30):
-            rate.addItem(f'{value} fps', value)
-        rate.setCurrentIndex(rate.findData(self.settings['fps']))
-        cores = QComboBox()
-        for value in (1, 2, 4):
-            cores.addItem(f'{value} core' if value == 1 else f'{value} cores', value)
-        cores.setCurrentIndex(cores.findData(self.settings['cpu_count']))
-        form.addRow('CPU cores:', cores)
-        form.addRow('iOS Memory (RAM):', ram)
-        form.addRow('Screen Refresh Rate:', rate)
-        note = QLabel('Your apps and settings are saved between sessions.')
-        note.setStyleSheet('color: #8c909c; font-size: 11px; margin-top: 6px;')
-        form.addRow(note)
+        limits=host_limits()
+        ram=QSpinBox();ram.setRange(1024,limits['memory_mib']);ram.setSingleStep(256);ram.setSuffix(' MiB')
+        ram.setValue(self.settings['memory_mib'])
+        rate=QSpinBox();rate.setRange(5,limits['fps']);rate.setSuffix(' fps');rate.setValue(self.settings['fps'])
+        cores=QSpinBox();cores.setRange(1,limits['cpu_count']);cores.setValue(self.settings['cpu_count'])
+        form.addRow('CPU cores:',cores)
+        form.addRow('iOS memory:',ram)
+        form.addRow('Display refresh target:',rate)
+        note=QLabel(f"Host: {limits['host_mib']/1024:.1f} GiB RAM, {os.cpu_count()} logical CPUs.\n"
+            f"Host RAM budget: 80% (QEMU overhead reserved).\n"
+            f"Current guest limit: 4 GiB RAM / 8 CPUs; 5–8 CPUs experimental.\n"
+            "A higher refresh target does not guarantee faster guest rendering.\n"
+            "Graphics: Software. Vulkan / OpenGL guest acceleration is under development.")
+        note.setWordWrap(True);form.addRow(note)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.settings = {'memory_mib': ram.currentData(), 'fps': rate.currentData(), 'cpu_count': cores.currentData()}
-            self.settings_path.parent.mkdir(parents=True, exist_ok=True)
-            self.settings_path.write_text(json.dumps(self.settings, indent=2))
+            self.settings.update(memory_mib=ram.value(),fps=rate.value(),cpu_count=cores.value())
+            self.save_settings()
 
     def help(self):
         msg = (
             "Mouse Controls:\n"
-            " • Click: Touch screen\n"
-            " • Drag: Swipe gestures\n\n"
+            " â€¢ Click: Touch screen\n"
+            " â€¢ Drag: Swipe gestures\n\n"
             "Shortcuts:\n"
-            " • Home / F1 / Esc: Return to Home Screen\n"
-            " • Apps: Open App Switcher\n"
-            " • F2: Power Button (Lock/Unlock)\n"
-            " • F4: Volume Up\n"
-            " • F3: Volume Down\n"
-            " • Ctrl+P: Pause / Resume\n"
-            " • Ctrl+S: Save Screenshot\n"
-            " • Ctrl+R: Rotate Screen\n"
-            " • F11: Toggle Full Screen\n\n"
-            "Type using the on-screen iOS keyboard."
+            " â€¢ Home / F1 / Esc: Return to Home Screen\n"
+            " â€¢ Apps: Open App Switcher\n"
+            " â€¢ F2: Power Button (Lock/Unlock)\n"
+            " â€¢ F4: Volume Up\n"
+            " â€¢ F3: Volume Down\n"
+            " â€¢ Ctrl+P: Pause / Resume\n"
+            " â€¢ Ctrl+S: Save Screenshot\n"
+            " â€¢ Ctrl+R: Rotate Screen\n"
+            " â€¢ F11: Toggle Full Screen\n\n"
+            "Click the iOS display to capture the PC keyboard (kernel 0091+)."
         )
         QMessageBox.information(self, "Emulator Controls", msg)
 

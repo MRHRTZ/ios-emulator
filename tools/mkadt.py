@@ -70,8 +70,8 @@ def node(name, props=(), children=()):
 
 def build(seed=None, qemu=False, highmem=False, memory_mib=None, cpu_count=1):
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
-    if cpu_count not in (1, 2, 4) or (not qemu and cpu_count != 1):
-        raise ValueError('QEMU CPU count must be 1, 2, or 4')
+    if cpu_count not in tuple(range(1, 9)) or (not qemu and cpu_count != 1):
+        raise ValueError('QEMU CPU count must be between 1 and 8')
     phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
     if memory_mib is not None:
         if not qemu or not 256 <= memory_mib <= 4096:
