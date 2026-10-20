@@ -171,6 +171,12 @@ def run(args):
         args.secs = 45 if args.test else 300
     if args.secs <= 0:
         raise ValueError('--secs must be positive')
+    if args.cpus > 1 or args.network:
+        symbols = subprocess.check_output(['llvm-nm', '--defined-only', str(kernel)], text=True)
+        if args.cpus > 1 and '_sweet_pc_smp_enabled' not in symbols:
+            raise ValueError('Multiple QEMU CPUs require kernel patch 0087 or newer')
+        if args.network and '_sweet_virtnet_init' not in symbols:
+            raise ValueError('Networking requires kernel patch 0088 or newer')
     block_disk = None
     ramdisk = None
     is_test = args.test
@@ -202,9 +208,9 @@ def run(args):
     out.mkdir(parents=True, exist_ok=False)
     print('Mode: XNU + minimal test PID 1 (NOT full iOS)' if is_test else 'Mode: XNU + supplied root image', flush=True)
     adt, payload = out / 'qemu.adt', out / 'payload.bin'
-    adt_args = ['--qemu'] + (['--memory-mib', str(args.memory_mib)] if block_disk else [])
+    adt_args = ['--qemu', '--cpus', str(args.cpus)] + (['--memory-mib', str(args.memory_mib)] if block_disk else [])
     run_tool(TOOLS / 'mkadt.py', adt, *adt_args)
-    command_line = ('debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress '
+    command_line = (f'debug=0xc serial=3 cpus={args.cpus} keepsyms=1 -enable_kprintf_spam -noprogress '
                     'sweettouch=0 sweetkeys=0 sweetusb=0 sweetlog=0 ')
     if block_disk:
         command_line += ('rd=vioroot0 viorw=1 rootrw=1 unentitled_ios_sim_launch=1 '
@@ -214,7 +220,7 @@ def run(args):
         command_line += 'rd=md0'
         run_tool(TOOLS / 'mkpayload.py', kernel, adt, payload, '--ramdisk', ramdisk, '--cmdline', command_line)
     command = [sys.executable, str(TOOLS / 'qemu-sweet.py'), str(payload), str(out),
-               '--secs', str(args.secs), '--kernel', str(kernel), '--fail-on-panic', '--live-serial']
+               '--secs', str(args.secs), '--cpus', str(args.cpus), '--kernel', str(kernel), '--fail-on-panic', '--live-serial']
     if block_disk:
         runner = load_runner()
         qemu_bin = runner.find_qemu(args.qemu)
@@ -224,6 +230,8 @@ def run(args):
         overlay = out / 'root-overlay.qcow2'
         subprocess.run([str(image_tool), 'create', '-f', 'qcow2', '-F', 'raw', '-b', str(block_disk), str(overlay)], check=True)
         command += ['--disk', str(overlay), '--disk-format', 'qcow2']
+    if args.network:
+        command += ['--network']
     if args.qemu:
         command += ['--qemu', args.qemu]
     process = subprocess.run(command, cwd=ROOT)
@@ -238,7 +246,8 @@ def run(args):
                      and not milestones.get('kernel_panic_observed', False))
     summary = {'mode': 'test' if is_test else ('virtio-ios-root' if block_disk else 'custom-ram-root'), 'qemu_result': result,
                'test_pid1_observed': reached, **milestones,
-               'full_ios_boot_verified': boot_verified,
+               'springboard_display_observed': boot_verified,
+               'full_ios_boot_verified': False,
                'runner_exit_code': process.returncode, 'output': str(out)}
     firmware.write_json(out / 'summary.json', summary)
     firmware.write_json(ROOT / 'data/last-run.json', summary)
@@ -273,6 +282,8 @@ def main():
     mode.add_argument('--root-image', help='Small prepared RAM root')
     mode.add_argument('--disk-image', help='Prepared HFS+ root block image (per-run overlay)')
     mode.add_argument('--test', action='store_true', help='Run the minimal test PID 1, not Apple iOS')
+    boot.add_argument('--cpus', type=int, choices=(1, 2, 4), default=1)
+    boot.add_argument('--network', action='store_true', help='Enable outbound virtual Ethernet/NAT')
     boot.add_argument('--kernel')
     boot.add_argument('--qemu')
     boot.add_argument('--memory-mib', type=int, default=2048, help='Kernel RAM for disk boot (256..4096 MiB)')

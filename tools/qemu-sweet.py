@@ -295,11 +295,13 @@ def main():
     ap.add_argument('--secs', type=float, default=20, help='Duration to run QEMU in seconds (default: 20)')
     ap.add_argument('--gdb', action='store_true', help='start halted, gdb stub on :1234, no timeout')
     ap.add_argument('--hmp', action='append', default=[], help='extra monitor command run after stop (repeatable), e.g. "x /8gx 0xfffffe..."')
+    ap.add_argument('--cpus', type=int, choices=(1, 2, 4), default=1)
     ap.add_argument('--cpu', default='cortex-a76', help='QEMU CPU model (default: cortex-a76)')
     ap.add_argument('--kernel', help='matching unstripped kernel, for exact framebuffer text decoding (uses llvm-nm)')
     ap.add_argument('--fail-on-panic', action='store_true', help='exit 2 for a visible panic, 3 for incomplete/blank decoding; requires --kernel')
     ap.add_argument('--live-serial', action='store_true', help='stream serial console output to stdout in real time')
     ap.add_argument('--disk', help='Prepared root block image (raw or qcow2), not copied into guest RAM')
+    ap.add_argument('--network', action='store_true', help='Enable outbound QEMU NAT (requires virtio Ethernet kernel)')
     ap.add_argument('--disk-format', choices=['raw', 'qcow2'], default='raw')
     ap.add_argument('--qemu', help='Path to qemu-system-aarch64 executable')
     ap.add_argument('--check-env', action='store_true', help='check QEMU installation and dependencies without running a payload')
@@ -351,7 +353,7 @@ def main():
     # virt RAM starts at 0x40000000: cover the payload's RAM (mkadt.py --highmem needs 8G).
     mem_size = struct.unpack_from('<Q', payload, 0x40)[0]
     ram_gib = max(4, -(-(phys_base + mem_size - 0x40000000) // (1 << 30)))
-    cmd = [qemu_bin, '-accel', 'tcg', '-M', 'virt,gic-version=3', '-cpu', a.cpu, '-smp', '1', '-m', f'{ram_gib}G',
+    cmd = [qemu_bin, '-accel', 'tcg', '-M', 'virt,gic-version=3', '-cpu', a.cpu, '-smp', str(a.cpus), '-rtc', 'base=utc,clock=host', '-nic', 'none', '-m', f'{ram_gib}G',
            '-nographic', '-serial', f'file:{qemu_path(out + "/serial.txt")}', '-qmp', mon_option,
            '-d', 'int,guest_errors,unimp', '-D', f'{out}/qemu.log', '-no-reboot',
            '-device', f'loader,file={qemu_path(out + "/ram.bin")},addr={phys_base:#x},force-raw=on',
@@ -363,6 +365,9 @@ def main():
         cmd += ['-global', 'virtio-mmio.force-legacy=false',
                 '-drive', f'file={qemu_path(a.disk)},format={a.disk_format},if=none,id=iosroot,cache=writeback',
                 '-device', 'virtio-blk-device,drive=iosroot']
+    if a.network:
+        cmd += ['-global', 'virtio-mmio.force-legacy=false', '-netdev', 'user,id=pcnet',
+                '-device', 'virtio-net-device,netdev=pcnet,mac=52:54:00:12:34:56']
     if a.gdb:
         cmd += ['-S', '-gdb', 'tcp:127.0.0.1:1234']
 

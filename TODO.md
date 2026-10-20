@@ -1,6 +1,6 @@
 # Windows emulator TODO
 
-Goal: native Windows CLI first; one bundled desktop app later. Python owns the
+Goal: working native Windows emulator with CLI and English desktop GUI; one bundled desktop app later. Python owns the
 workflow. QEMU provides ARM64 emulation. Do not confuse the minimal test process
 with Apple's launchd/SpringBoard.
 
@@ -39,7 +39,7 @@ require separate compatibility work, including ARM64e/PAC and kernel ABI.
 
 - [x] Probe native UDIF/APFS reading with 7-Zip 26.04 and verify extracted
       ARM64 launchd/dyld samples; this does not produce a bootable root.
-- [ ] Build a native Windows-capable APFS/UDIF extraction pipeline that handles
+- [ ] Deferred by user: build a native Windows-capable APFS/UDIF extraction pipeline that handles
       LZBITMAP and preserves permissions, ownership, symlinks, hardlinks/xattrs.
 - [x] Produce an HFS+ root containing OS and both cryptexes, dyld shared-cache
       links and required initial configuration using Python and a temporary
@@ -52,16 +52,23 @@ require separate compatibility work, including ARM64e/PAC and kernel ABI.
       xpcproxy/SpringBoard/backboardd executed. Record remaining daemon failures.
 - [x] Bring up backboardd/SpringBoard and verify a real home screen.
 - [x] Add keyboard/mouse/touch-event input bridging and live display output.
-- [x] Implement orderly guest shutdown and reuse of per-run persistent changes.
-- [ ] Provide a guest clock and network connection; initial clock is 1969/1970.
+- [x] Reuse guest changes in the GUI persistent overlay.
+- [ ] Implement orderly iOS shutdown (current Stop is a QEMU power cut).
+- [x] Supply QEMU PL031 host UTC clock; Apple logs show current date.
+- [x] Adapt Aff0 MPIDRs / HVC PSCI; 2/4 CPU test userspace and SGI verified.
+- [ ] Validate 2/4-core GUI responsiveness and clock across Pause/Resume.
+- [ ] Finish virtio Ethernet, configd/DHCP, route, DNS and Safari verification.
 
 Installing QEMU and downloading an IPSW do not complete these tasks. The CLI
 must report missing prerequisites honestly, never label the test PID 1 as iOS.
 
 ## 5. Reliability
 
-- [ ] Prevent two concurrent downloads/runs from colliding over shared state.
-- [ ] Add configuration, disk/memory limits and useful failure messages.
+- [x] Prevent two GUI sessions from writing the same overlay.
+- [ ] Broader pipeline/download concurrency (deferred).
+- [x] GUI CPU/RAM/refresh settings, bounds, and English failure messages.
+- [x] English icon sidebar, hover labels, no touch-area tooltip.
+- [x] Cover topology/RTC, ring backpressure/wrap, coordinates and GUI labels in host tests.
 - [ ] Extend regression coverage for extraction, malformed manifests and cleanup.
 - [ ] Add a reproducible clean-Windows setup test.
 
@@ -73,3 +80,10 @@ must report missing prerequisites honestly, never label the test PID 1 as iOS.
 - [ ] Keep firmware downloaded separately; do not bundle Apple's IPSW.
 - [x] Add GUI progress, display/input, start/stop and diagnostics.
 - [ ] Test licenses, upgrades and code signing for the packaged application.
+
+## Branch policy
+
+- Development Windows: `dev/window-native`.
+- Windows publish: `window-native`, promoted only as a release step.
+- Stable cross-platform QEMU: `main`.
+- APFS pipeline and application wrapper/bundling remain deferred.

@@ -52,6 +52,9 @@ python emulator.py status
   The CLI never substitutes the test program for real iOS. The default run
   lasts 300 seconds; choose `--secs` for longer runs. Each run ends with a
   framebuffer snapshot and serial log in its run directory.
+- `run --cpus 2` / `--cpus 4`: select matching QEMU/ADT/kernel CPU topology; requires kernel0087+.
+- `run --network`: enable outbound user-mode NAT; requires kernel0088+.
+- `gui`: live desktop display and input, described in [GUI.md](GUI.md).
 - `run --disk-image <path>`: selects another prepared raw HFS+ disk.
   Changes remain in the run directory overlay; reuse/promotion is not yet exposed.
 - `run --root-image <path>`: tests a supplied prepared raw RAM-root image;
@@ -60,7 +63,7 @@ python emulator.py status
   `apple_userland_started` requires the Apple launchd early-boot log;
   `springboard_exec_observed` records execution separately. Neither flag
   claims that the home screen or input works. Serial panic and root mount
-  errors remain failures even if an earlier boot milestone was reached.
+  errors remain failures even if an earlier boot milestone was reached. `springboard_display_observed` records serial display evidence; `full_ios_boot_verified` remains false without independent visual/input verification.
 
 Other useful options:
 
@@ -100,11 +103,11 @@ and hardlinks were preserved by rsync. Extended attribute/ACL parity is not yet
 verified. The virtual disk avoids loading the whole root into guest RAM.
 Apple launchd completed early boot in Windows QEMU; xpcproxy, SpringBoard
 and backboardd executed and framebuffer swaps were observed. This confirms
-real Apple userspace, not a complete or interactive home screen. driverkitd
+real Apple userspace. Later GUI runs visually verified the home screen and touch input; CLI serial markers alone still do not prove a usable home screen. driverkitd
 was killed by the per-process memory limit (Jetsam namespace 1/code 7),
 confirmed from this kernel source; it has not been fixed yet.
 These binaries are downloaded from Apple's IPSW, not committed to this repo.
-See TODO.md for remaining Windows input/display and application packaging work.
+Kernel0087 also passed 2/4-core PID1 tests and a four-core real-iOS boot through launchd/SpringBoard with current-date timestamps. See TODO.md for network verification and application packaging work.
 
 ## Checks
 

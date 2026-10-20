@@ -68,8 +68,10 @@ def node(name, props=(), children=()):
     return n
 
 
-def build(seed=None, qemu=False, highmem=False, memory_mib=None):
+def build(seed=None, qemu=False, highmem=False, memory_mib=None, cpu_count=1):
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
+    if cpu_count not in (1, 2, 4) or (not qemu and cpu_count != 1):
+        raise ValueError('QEMU CPU count must be 1, 2, or 4')
     phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
     if memory_mib is not None:
         if not qemu or not 256 <= memory_mib <= 4096:
@@ -126,14 +128,14 @@ def build(seed=None, qemu=False, highmem=False, memory_mib=None):
     # SWEET SMP: all eight cores in physical-core order (0-5 Cortex-A55,
     # 6-7 Cortex-A76), one homogeneous cluster. The kernel defaults to one
     # and uses cpus=N to select an initial prefix (N <= 8).
-    # QEMU retains its original single-CPU tree: its MPIDRs differ from sweet.
+    # QEMU uses a flat Aff0 topology; the phone uses Aff1 core IDs.
     cpu_nodes = []
-    for core in range(1 if qemu else 8):
+    for core in range(cpu_count if qemu else 8):
         cpu_nodes.append(node(f'cpu{core}', [
             ph(),
             ('device_type', cstr('cpu')),
             ('compatible', cstr('qcom,kryo470') + cstr('ARM,v8')),
-            ('reg', u32(core << 8)),  # actual MPIDR Aff1:Aff0, NOT logical ID
+            ('reg', u32(core if qemu else core << 8)),  # actual MPIDR Aff1:Aff0, NOT logical ID
             ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
             ('cluster-id', u32(0)),  # descriptive; see ml_parse_cpu_topology
             ('cluster-type', u32(0)),  # homogeneous CLUSTER_TYPE_SMP, not AMP
@@ -228,12 +230,13 @@ def build(seed=None, qemu=False, highmem=False, memory_mib=None):
         ('manufacturer', cstr('Apple Inc.')),
         ('#address-cells', u32(2)),
         ('#size-cells', u32(2)),
-    ], [chosen, defaults, cpus, arm_io, fbcon, buttons] + product + ([node('sweet-virtio', [('reg', u64(0x0a000000, 0x4000))])] if qemu else [ufs]))
+    ], [chosen, defaults, cpus, arm_io, fbcon, buttons] + product + ([node('sweet-virtio', [('reg', u64(0x0a000000, 0x4000))]), node('sweet-pc-rtc', [('reg', u64(0x09010000, 0x1000))])] if qemu else [ufs]))
 
 
 if __name__ == '__main__':
     memory_mib = int(sys.argv[sys.argv.index('--memory-mib') + 1]) if '--memory-mib' in sys.argv else None
-    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv, memory_mib=memory_mib)
+    cpu_count = int(sys.argv[sys.argv.index('--cpus') + 1]) if '--cpus' in sys.argv else 1
+    root = build(cpu_count=cpu_count, qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv, memory_mib=memory_mib)
     blob = adt.serialize(root)
     open(sys.argv[1], 'wb').write(blob)
     if '--dump' in sys.argv:

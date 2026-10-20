@@ -91,10 +91,11 @@ def map_pointer(px, py, left, top, width, height, rotation=0, clamp=False):
 
 
 class PcSession:
-    def __init__(self, root, memory_mib=2048, kernel=None, overlay=None):
+    def __init__(self, root, memory_mib=2048, kernel=None, overlay=None, cpu_count=1):
         self.root = Path(root)
         self.kernel = Path(kernel) if kernel else self.root / 'xnu/out/kernel.development.sweet'
         self.memory_mib = memory_mib
+        self.cpu_count = cpu_count
         self.overlay = Path(overlay) if overlay else self.root / 'data/gui/ios-session.qcow2'
         self.process = None
         self.qtest = self.qmp = None
@@ -105,18 +106,21 @@ class PcSession:
         self.serial_tail = ''
         self.stage = 'stopped'
         self.last_status = 0
+        self.held_inputs = {}
 
     def start(self):
         import adt
         import mkadt
         import root_builder
+        if self.cpu_count not in (1, 2, 4):
+            raise ValueError('CPU count must be 1, 2, or 4')
         if not 256 <= self.memory_mib <= 4096:
-            raise ValueError('RAM harus antara 256 dan 4096 MiB')
+            raise ValueError('RAM must be between 256 and 4096 MiB')
         base = self.root / 'data/root/ios-root.img'
         if not base.is_file() or not self.kernel.is_file():
-            raise ValueError('Kernel/disk iOS belum tersedia. Jalankan prepare-root terlebih dahulu.')
+            raise ValueError('iOS kernel or base disk missing. Complete prepare-root first.')
         if not root_builder.hfs_header(base)['clean']:
-            raise ValueError('Disk dasar iOS belum bersih. Periksa filesystem terlebih dahulu.')
+            raise ValueError('iOS base disk is dirty. Please run filesystem check first.')
         self.overlay.parent.mkdir(parents=True, exist_ok=True)
         self.lock_file = self.overlay.with_suffix('.lock').open('a+b')
         self.lock_file.write(b'0'); self.lock_file.flush(); self.lock_file.seek(0)
@@ -129,16 +133,18 @@ class PcSession:
                 fcntl.flock(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             self.lock_file.close(); self.lock_file = None
-            raise ValueError('Sesi iOS lain sedang memakai disk ini.')
+            raise ValueError('Another iOS session is currently running on this disk. Stop it before starting a new one.')
         spec = importlib.util.spec_from_file_location('pc_qemu_runner', self.root / 'tools/qemu-sweet.py')
         self.runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.runner)
         qemu = self.runner.find_qemu()
         if not qemu:
-            raise ValueError('QEMU ARM64 tidak ditemukan.')
+            raise ValueError('QEMU ARM64 binary not found. Please install QEMU.')
         flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         symbols = subprocess.check_output(['llvm-nm', '--defined-only', str(self.kernel)], text=True, creationflags=flags)
+        if self.cpu_count > 1 and '_sweet_pc_smp_enabled' not in symbols:
+            raise ValueError('This kernel supports only one QEMU CPU. Install a kernel with patch 0087.')
         if 'pcInputFired' not in symbols or '_sweet_virtio_rootdev' not in symbols:
-            raise ValueError('Kernel belum mendukung kontrol PC. Gunakan build dengan patch 0084 atau lebih baru.')
+            raise ValueError('Kernel does not support PC control. Use build with patch 0084 or newer.')
 
         if not self.overlay.exists():
             image_tool = Path(qemu).with_name('qemu-img.exe' if os.name == 'nt' else 'qemu-img')
@@ -146,11 +152,11 @@ class PcSession:
                            check=True, creationflags=flags, stdout=subprocess.DEVNULL)
         self.out = self.root / 'data/gui/runs' / (time.strftime('%Y%m%d-%H%M%S') + f'-{time.time_ns() % 1000000:06d}')
         self.out.mkdir(parents=True)
-        tree = mkadt.build(qemu=True, memory_mib=self.memory_mib)
+        tree = mkadt.build(qemu=True, memory_mib=self.memory_mib, cpu_count=self.cpu_count)
         tree.children.append(mkadt.node('sweet-pc-input', [('reg', mkadt.u64(INPUT_ADDRESS, 0x4000))]))
         tree_path = self.out / 'pc.adt'; tree_path.write_bytes(adt.serialize(tree))
         payload_path = self.out / 'payload.bin'
-        line = ('debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress '
+        line = (f'debug=0xc serial=3 cpus={self.cpu_count} keepsyms=1 -enable_kprintf_spam -noprogress '
                 'sweettouch=0 sweetkeys=0 sweetusb=0 sweetlog=0 rd=vioroot0 viorw=1 rootrw=1 '
                 'unentitled_ios_sim_launch=1 ignition_level=1 launchd_unsecure_cache=1 '
                 'wdt=-1 wdt_test=no_user_checkin sweetfb_noconsole=1 sweetfb_hz=30')
@@ -166,7 +172,7 @@ class PcSession:
         while self.qmp_port == self.input_port:
             self.input_port = free_port()
         qp = self.runner.qemu_path
-        command = [qemu, '-accel', 'tcg', '-M', 'virt,gic-version=3', '-cpu', 'cortex-a76', '-smp', '1',
+        command = [qemu, '-accel', 'tcg', '-M', 'virt,gic-version=3', '-cpu', 'cortex-a76', '-smp', str(self.cpu_count), '-rtc', 'base=utc,clock=host',
                    '-m', f'{ram_gib}G', '-display', 'none', '-monitor', 'none', '-no-reboot', '-nic', 'none',
                    '-serial', f'file:{qp(self.out/"serial.txt")}',
                    '-qmp', f'tcp:127.0.0.1:{self.qmp_port},server=on,wait=off',
@@ -178,11 +184,16 @@ class PcSession:
                    '-global', 'virtio-mmio.force-legacy=false',
                    '-drive', f'file={qp(self.overlay)},format=qcow2,if=none,id=iosroot,cache=writeback',
                    '-device', 'virtio-blk-device,drive=iosroot']
+        self.network_enabled = '_sweet_virtnet_init' in symbols
+        if self.network_enabled:
+            command += ['-netdev', 'user,id=pcnet', '-device',
+                        'virtio-net-device,netdev=pcnet,mac=52:54:00:12:34:56']
         self.errors = (self.out/'qemu-errors.log').open('wb')
         self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                         stderr=self.errors, creationflags=flags)
         metadata = {'pid': self.process.pid, 'output': str(self.out), 'qmp_port': self.qmp_port,
-                    'input_port': self.input_port, 'overlay': str(self.overlay), 'kernel': str(self.kernel)}
+                    'input_port': self.input_port, 'cpu_count': self.cpu_count,
+                    'network': self.network_enabled, 'overlay': str(self.overlay), 'kernel': str(self.kernel)}
         (self.root/'data/gui/active.json').write_text(json.dumps(metadata, indent=2))
         for attempt in range(100):
             try:
@@ -193,12 +204,12 @@ class PcSession:
                     raise RuntimeError((self.out/'qemu-errors.log').read_text(errors='replace'))
                 time.sleep(.05)
         else:
-            raise TimeoutError('Tidak dapat menyambungkan layar QEMU.')
+            raise TimeoutError('Could not connect to QEMU control channels.')
         self.stage = 'booting'
 
     def poll(self):
         if self.process.poll() is not None:
-            raise RuntimeError('QEMU berhenti. Periksa log sesi untuk detail.')
+            raise RuntimeError('QEMU process stopped. Check session logs for details.')
         self.header = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
         self.input_ready = self.header[0] == INPUT_MAGIC and self.header[1] == 1
         path = self.out/'serial.txt'
@@ -240,7 +251,7 @@ class PcSession:
         self.qmp.call('pmemsave', val=FB_ADDRESS, size=size, filename=path.as_posix())
         data = path.read_bytes()
         if len(data) != size:
-            raise RuntimeError('Layar QEMU belum terbaca lengkap.')
+            raise RuntimeError('QEMU framebuffer could not be read completely.')
         return data
 
     def input(self, kind, code, down, x=0, y=0):
@@ -256,9 +267,25 @@ class PcSession:
         record = struct.pack('<8I', (head + 1) & 0xffffffff, kind, code, int(bool(down)), x, y, 0, 0)
         self.qtest.write(INPUT_ADDRESS + 64 + (head & 63) * 32, record)
         self.qtest.write32(INPUT_ADDRESS + 8, (head + 1) & 0xffffffff)
+        if down:
+            self.held_inputs[(kind, code)] = (x, y)
+        else:
+            self.held_inputs.pop((kind, code), None)
         return True
 
     def pause(self, paused):
+        if paused and self.input_ready:
+            # Release before freezing the guest, and wait until HID acknowledges.
+            deadline = time.monotonic() + 1
+            while True:
+                for (kind, code), (x, y) in list(self.held_inputs.items()):
+                    self.input(kind, code, False, x, y)
+                header = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS, 32))
+                if not self.held_inputs and header[2] == header[3]:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('iOS did not release its input controls before pausing.')
+                time.sleep(.01)
         self.qmp.call('stop' if paused else 'cont')
 
     def stop(self):
