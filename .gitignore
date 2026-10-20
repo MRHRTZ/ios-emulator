@@ -11,3 +11,7 @@ __pycache__/
 
 # Local firmware downloads, extracted Apple files and emulator runs
 data/
+
+# Local Python environments
+venv/
+.venv/

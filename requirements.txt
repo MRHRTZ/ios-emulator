@@ -1,0 +1,5 @@
+# Desktop GUI
+PySide6==6.11.1
+# Apple device-tree decompression and root-helper ISO creation
+lzfse==0.4.2.post1
+pycdlib==1.22.0

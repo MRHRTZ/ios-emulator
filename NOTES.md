@@ -1,3 +1,12 @@
+## Checkpoint 2026-10-21
+
+- Audited remote: dev/window-native contained 4e29f0c; origin/main still 11da58b. Previous checkpoint push completed only for development. No running QEMU PID from active.json found.
+- Fixed dark spinner white, dialog push-button styling, dropdown resource settings, and power arc opening (old arc opened sideways). Added venv/.venv ignores and requirements.txt for PySide6/lzfse/pycdlib; README setup uses requirements.
+- Worker permits only one outstanding GUI frame, preventing stale full-resolution frame queues. This bounds host delivery; does NOT establish improved guest FPS or GPU acceleration. Existing 33 host tests PASS offscreen. Runtime motion, auto-unlock and keyboard validation remain pending.
+- Safari deferred by user. No local Chrome IPA found; installation skipped. No guest disk changes or firmware uploads.
+- main README update is documentation only, based on remote main; Windows implementation remains on dev/window-native per branch policy. main's older local-only implementation commits are not promoted.
+
+---
 ## STOP CHECKPOINT - usage1% remaining (2026-10-20 21:52 WIB, latest)
 
 - User requested continuation down to1-3%; account now99% used/1% remaining, weekly31% used. STOP work after saving this checkpoint.

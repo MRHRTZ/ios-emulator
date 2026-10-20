@@ -39,7 +39,7 @@ def control_icon(name, color="#d9dce5"):
         painter.drawRoundedRect(QRectF(4, 7, 12, 13), 1.5, 1.5)
         lines([(8, 4), (20, 4), (20, 17)])
     elif name == 'Power':
-        painter.drawArc(QRectF(4, 4, 16, 16), 55 * 16, 250 * 16)
+        painter.drawArc(QRectF(4, 4, 16, 16), 130 * 16, 280 * 16)
         painter.drawLine(12, 2, 12, 11)
     elif name in ('Vol+', 'Vol-'):
         lines([(4, 9), (8, 9), (12, 5), (12, 19), (8, 15), (4, 15), (4, 9)])
@@ -89,6 +89,7 @@ class Worker(QObject):
         self.kernel, self.overlay = kernel, overlay
         self.commands = queue.Queue(maxsize=512)
         self.stopping = threading.Event()
+        self.frame_pending = threading.Event()
         self.thread = threading.Thread(target=self.run, daemon=True, name='iOS emulator')
         self.session = None
 
@@ -145,9 +146,10 @@ class Worker(QObject):
                         self.log.emit(delta)
                     self.state.emit('paused' if paused else self.session.stage, self.session.input_ready, fps)
                     next_poll = now + .25
-                if now >= next_frame:
+                if now >= next_frame and not self.frame_pending.is_set():
                     data = self.session.frame()
                     image = QImage(data, FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4, QImage.Format.Format_RGB32).copy()
+                    self.frame_pending.set()
                     self.frame.emit(image)
                     frames += 1
                     interval = 2. if self.session.stage == 'booting' else (.5 if self.session.stage in ('services', 'springboard') else 1 / self.settings['fps'])
@@ -354,7 +356,7 @@ class Spinner(QWidget):
     def hideEvent(self,event): self.timer.stop();super().hideEvent(event)
     def paintEvent(self,event):
         painter=QPainter(self);painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(self.palette().color(QPalette.ColorRole.Highlight),2,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(self.palette().color(QPalette.ColorRole.WindowText),2,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
         painter.drawArc(QRectF(3,3,10,10),self.angle*16,240*16)
 
 
@@ -552,6 +554,11 @@ class Window(QMainWindow):
             palette.setColor(role,QColor(value))
             palette.setColor(QPalette.ColorGroup.Disabled,role,QColor(muted))
         self.setPalette(palette)
+        spinner_palette=QPalette(palette)
+        spinner_palette.setColor(QPalette.ColorRole.WindowText,QColor('#ffffff' if dark else fg))
+        if hasattr(self,'progress'):
+            self.progress.setPalette(spinner_palette)
+            self.progress.update()
         self.setStyleSheet(f"""
             QWidget {{ color: {fg}; }}
             QMainWindow, QDialog {{ background: {bg}; }}
@@ -559,6 +566,10 @@ class Window(QMainWindow):
             QMenu::item:selected, QMenuBar::item:selected {{ background: {hover}; }}
             QMenu::item:disabled, QWidget:disabled {{ color: {muted}; }}
             QPlainTextEdit, QComboBox, QSpinBox {{ background: {panel}; color: {fg}; border: 1px solid {border}; }}
+            QPushButton {{ background: {panel}; color: {fg}; border: 1px solid {border}; border-radius: 4px; padding: 6px 16px; }}
+            QPushButton:hover {{ background: {hover}; }}
+            QPushButton:default {{ border: 1px solid #438bea; }}
+            QComboBox QAbstractItemView {{ background: {panel}; color: {fg}; selection-background-color: #438bea; selection-color: white; }}
             QStatusBar {{ border-top: 1px solid {border}; }}
             QStatusBar::item {{ border: none; }}
             QStatusBar QLabel {{ color: {fg}; padding: 0 4px; }}
@@ -634,6 +645,8 @@ class Window(QMainWindow):
         self.worker.thread.start()
 
     def new_frame(self, image):
+        if self.worker and hasattr(self.worker, 'frame_pending'):
+            self.worker.frame_pending.clear()
         if self.stopping or not self.worker: return
         if self.auto_home_pending and self.stage=='display':
             now=time.monotonic()
@@ -804,10 +817,15 @@ class Window(QMainWindow):
         dialog.setWindowTitle('Emulator Settings')
         form = QFormLayout(dialog)
         limits=host_limits()
-        ram=QSpinBox();ram.setRange(1024,limits['memory_mib']);ram.setSingleStep(256);ram.setSuffix(' MiB')
-        ram.setValue(self.settings['memory_mib'])
-        rate=QSpinBox();rate.setRange(5,limits['fps']);rate.setSuffix(' fps');rate.setValue(self.settings['fps'])
-        cores=QSpinBox();cores.setRange(1,limits['cpu_count']);cores.setValue(self.settings['cpu_count'])
+        def choices(values, current, suffix=''):
+            box=QComboBox()
+            for value in sorted(set(values) | {current}):
+                box.addItem(f'{value}{suffix}',value)
+            box.setCurrentIndex(box.findData(current))
+            return box
+        ram=choices(range(1024,limits['memory_mib']+1,256),self.settings['memory_mib'],' MiB')
+        rate=choices([n for n in (5,10,15,20,24,30,45,60,90,120) if n<=limits['fps']],self.settings['fps'],' fps')
+        cores=choices(range(1,limits['cpu_count']+1),self.settings['cpu_count'])
         form.addRow('CPU cores:',cores)
         form.addRow('iOS memory:',ram)
         form.addRow('Display refresh target:',rate)
@@ -822,7 +840,7 @@ class Window(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.settings.update(memory_mib=ram.value(),fps=rate.value(),cpu_count=cores.value())
+            self.settings.update(memory_mib=ram.currentData(),fps=rate.currentData(),cpu_count=cores.currentData())
             self.save_settings()
 
     def help(self):

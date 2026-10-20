@@ -29,6 +29,9 @@ iPhone implementation.
 ## Start on Windows
 
 ```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 python emulator.py doctor
 python emulator.py download
 python emulator.py inspect
@@ -37,7 +40,6 @@ python emulator.py device-tree
 python emulator.py probe-root
 python emulator.py run --test
 # Once a matching kernel and prepared root exist:
-python -m pip install PySide6
 python emulator.py gui
 ```
 

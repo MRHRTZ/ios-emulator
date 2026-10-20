@@ -59,7 +59,7 @@ require separate compatibility work, including ARM64e/PAC and kernel ABI.
 - [ ] Validate 2/4-core GUI responsiveness and clock across Pause/Resume.
 - [x] Verify IPv6 DNS, remote TLS and actual HTTP 200/HTML arrival in Safari.
 - [x] Verify IPv4 DHCP and route with BPF-enabled kernel0090.
-- [ ] Fix Safari/WebKit blank content despite successful HTML receipt.
+- [ ] Deferred by user (2026-10-21): Safari/WebKit blank content despite successful HTML receipt.
 - [ ] Integrate a guest-compatible GPU/graphics transport and Windows renderer.
 - [ ] Add graphics settings: Auto, Software, Vulkan, OpenGL. Expose accelerated
       choices only once an actual backend works; host presentation alone does
@@ -110,3 +110,13 @@ must report missing prerequisites honestly, never label the test PID 1 as iOS.
 - [x] Identify/remove unavailable Photos widget placeholders; clean Home visually verified.
 - [ ] Install and verify a default wallpaper through the guest's wallpaper path.
 - [ ] Add actual UI/guest screenshots to documentation.
+
+## 2026-10-21 follow-up
+
+- [x] White loading spinner in dark theme; readable dialog buttons.
+- [x] CPU, memory and refresh settings use dropdowns.
+- [x] Correct power glyph arc so its opening faces the top stem.
+- [x] Ignore venv/.venv and provide pinned Python requirements.
+- [x] Bound host frame delivery to one outstanding frame to avoid stale-frame queues.
+- [ ] Runtime-check motion latency at several refresh targets; guest software rendering remains a bottleneck.
+- [ ] Chrome installation skipped: no local IPA supplied/found; revisit when a compatible installable package is available.
