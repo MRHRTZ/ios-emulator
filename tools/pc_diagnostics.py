@@ -6,6 +6,33 @@ from pathlib import Path
 import platform
 import time
 
+PIPELINE_MAGIC = 0x50464d31
+
+
+class PipelineRates:
+    def __init__(self):
+        self.sample = None
+        self.rates = {}
+
+    def update(self, fields, now):
+        if fields[0] != PIPELINE_MAGIC or fields[7] != 1:
+            self.sample = None
+            self.rates = {}
+            return None
+        if self.sample is None:
+            self.sample = (now, fields)
+        since, previous = self.sample
+        if now-since >= 2:
+            ticks = (fields[1]-previous[1]) & 0xffffffff
+            self.rates = {
+                'vsync_hz': round(ticks/(now-since), 2),
+                'swap_hz': round(((fields[2]-previous[2]) & 0xffffffff)/(now-since), 2),
+                'average_callback_ms': round(((fields[4]-previous[4]) & 0xffffffff)/ticks/1000, 3) if ticks else None,
+            }
+            self.sample = (now, fields)
+        return dict(self.rates, last_callback_ms=round(fields[3]/1000, 3),
+            max_callback_ms=round(fields[5]/1000, 3), flush_divisor=fields[6])
+
 
 class VisualRate:
     """Count distinct images actually painted in a trailing two-second window.
@@ -48,6 +75,7 @@ def system_information(root, settings, limits, session=None, visual_fps=0., capt
     def metric(value, suffix=''):
         return 'Unavailable' if value is None else f'{value:.1f}{suffix}'
     metadata = getattr(session, 'video_metadata', None) or {}
+    pipeline = getattr(session, 'video_pipeline', None) or {}
     return '\n'.join([
         'WINDOWS HOST',
         f'OS: {platform.system()} {platform.release()} (build {platform.version()})',
@@ -68,6 +96,9 @@ def system_information(root, settings, limits, session=None, visual_fps=0., capt
         f'Visual changes painted: {visual_fps:.1f} fps',
         f'Changed frames captured: {capture_fps:.1f} fps',
         f'iOS framebuffer presentations: {metric(getattr(session, "guest_present_fps", None), " /s")}',
+        f'iOS submitted swaps: {metric(pipeline.get("swap_hz"), " /s")}',
+        f'Kernel vsync callbacks: {metric(pipeline.get("vsync_hz"), " /s")}',
+        f'Mean vsync work: {metric(pipeline.get("average_callback_ms"), " ms")}',
         f'Capture target: {settings["fps"]} fps (not animation speed)',
         f'Transport: {getattr(session, "frame_transport", "Not running")}',
         f'Last frame export: {getattr(session, "frame_export_ms", 0.):.1f} ms',

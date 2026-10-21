@@ -3,10 +3,43 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
-from pc_diagnostics import VisualRate, system_information
+from pc_diagnostics import VisualRate, system_information, PipelineRates, PIPELINE_MAGIC
 
 
 class DisplayMeasurementTests(unittest.TestCase):
+    def test_pipeline_counters_distinguish_submit_vsync_and_work_with_wrap(self):
+        rates = PipelineRates()
+        fields = [PIPELINE_MAGIC, 0xfffffffe, 0xfffffffc, 1000, 0xffffff00, 1000, 2, 1]
+        self.assertNotIn('vsync_hz', rates.update(fields, 10.))
+        updated = [PIPELINE_MAGIC, 2, 6, 2000, 0x1e40, 2000, 2, 1]
+        info = rates.update(updated, 12.)
+        self.assertEqual(info['vsync_hz'], 2.)
+        self.assertEqual(info['swap_hz'], 5.)
+        self.assertEqual(info['average_callback_ms'], 2.)
+        self.assertIsNone(rates.update([0]*8, 14.))
+        self.assertEqual(rates.rates, {})
+
+    def test_fast_drag_final_move_precedes_release(self):
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtCore import Qt, QEvent, QPointF
+        from PySide6.QtGui import QMouseEvent
+        from emulator_gui import Screen
+        app = QApplication.instance() or QApplication([])
+        screen = Screen()
+        screen.resize(540, 1200)
+        screen.down = True
+        screen.last = (100, 100)
+        received = []
+        screen.touch.connect(lambda down, x, y: received.append((down,x,y)))
+        end = QPointF(300, 500)
+        expected = screen.coordinates(end, True)
+        event = QMouseEvent(QEvent.Type.MouseButtonRelease, end, end,
+            Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
+        screen.mouseReleaseEvent(event)
+        self.assertEqual(received, [(True,*expected), (False,*expected)])
+        self.assertFalse(screen.down)
+        screen.close()
+
     def test_repaint_does_not_inflate_rate_and_idle_decays_to_zero(self):
         rate = VisualRate()
         rate.painted(1, 10.)

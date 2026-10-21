@@ -14,6 +14,7 @@ import tempfile
 import time
 
 from pc_platform import multicore_boot_args
+from pc_diagnostics import PipelineRates
 
 FB_ADDRESS, FB_WIDTH, FB_HEIGHT = 0x9c000000, 1080, 2400
 VIDEO_MAGIC = 0x56494431
@@ -128,6 +129,8 @@ class PcSession:
         self.frame_reader = None
         self.frame_reader_attempted = False
         self.frame_transport = 'QMP file export'
+        self.pipeline_rates = PipelineRates()
+        self.video_pipeline = None
 
     def start(self):
         import adt
@@ -268,6 +271,9 @@ class PcSession:
                 raise error
             return delta + self.poll()
         self.input_ready = self.header[0] == INPUT_MAGIC and self.header[1] == 1
+        if self.input_ready:
+            pipeline = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS + 0x1000, 32))
+            self.video_pipeline = self.pipeline_rates.update(pipeline, time.monotonic())
         if self.input_ready and self.header[7] & 2 and not self.shutdown_requested:
             self.guest_calendar_unix = struct.unpack('<I', self.qtest.read(INPUT_ADDRESS + 60, 4))[0]
         if 'panic(cpu ' in self.serial_tail or 'SWEET EARLY PANIC:' in self.serial_tail:
@@ -289,6 +295,7 @@ class PcSession:
                       'guest_present_fps': self.guest_present_fps, 'exported_frames': self.exported_frames,
                       'duplicate_frames': self.duplicate_frames,
                       'frame_transport': self.frame_transport,
+                      'video_pipeline': self.video_pipeline,
                       'held_input_count': len(self.held_inputs),
                       'input_backlog': (self.header[2]-self.header[3]) & 0xffffffff,
                       'guest_calendar_unix': self.guest_calendar_unix,
@@ -428,6 +435,8 @@ class PcSession:
             self.release_inputs()
         self.video_rate_sample = None
         self.guest_present_fps = 0. if paused else None
+        self.pipeline_rates = PipelineRates()
+        self.video_pipeline = None
         self.qmp.call('stop' if paused else 'cont')
         if not paused and self.input_ready and self.header and self.header[7] & 2:
             self.clock_resume_warning = None

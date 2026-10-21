@@ -273,7 +273,13 @@ class Screen(QWidget):
 
     def mouseReleaseEvent(self, event):
         if self.down and event.button() == Qt.MouseButton.LeftButton:
-            self.last = self.coordinates(event.position(), True)
+            end = self.coordinates(event.position(), True)
+            if end != self.last:
+                self.last = end
+                # A fast drag may end inside the move throttle interval.
+                # Send its final position while the contact is still down;
+                # an up-only coordinate can otherwise look like a tap to iOS.
+                self.touch.emit(True, *self.last)
             self.release_touch()
 
     def release_touch(self):
