@@ -57,6 +57,7 @@ class QTest:
 class QMP:
     def __init__(self, port):
         self.socket = socket.create_connection(('127.0.0.1', port), timeout=5)
+        self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.stream = self.socket.makefile('rwb')
         greeting = json.loads(self.stream.readline())
         if 'QMP' not in greeting:
@@ -123,6 +124,10 @@ class PcSession:
         self.guest_present_fps = None
         self.video_rate_sample = None
         self.exported_frames = 0
+        self.duplicate_frames = 0
+        self.frame_reader = None
+        self.frame_reader_attempted = False
+        self.frame_transport = 'QMP file export'
 
     def start(self):
         import adt
@@ -282,6 +287,8 @@ class PcSession:
                       'frame_export_ms': round(self.frame_export_ms, 2),
                       'video_metadata': self.video_metadata, 'unchanged_frame_skips': self.frame_skips,
                       'guest_present_fps': self.guest_present_fps, 'exported_frames': self.exported_frames,
+                      'duplicate_frames': self.duplicate_frames,
+                      'frame_transport': self.frame_transport,
                       'held_input_count': len(self.held_inputs),
                       'input_backlog': (self.header[2]-self.header[3]) & 0xffffffff,
                       'guest_calendar_unix': self.guest_calendar_unix,
@@ -326,25 +333,53 @@ class PcSession:
                     self.frame_skips += 1
                     return None
                 video = counter
-        # Binary QMP export is ~3x faster than base64 qtest on this Windows host.
+        started = time.perf_counter()
+        size = FB_WIDTH * FB_HEIGHT * 4
+        if os.name == 'nt' and self.process and not self.frame_reader_attempted:
+            self.frame_reader_attempted = True
+            try:
+                from pc_framebuffer import WindowsFramebuffer
+                self.frame_reader = WindowsFramebuffer(self.process.pid, self.qmp, FB_ADDRESS, size)
+                self.frame_transport = 'Windows direct framebuffer read'
+            except (OSError, RuntimeError, ValueError):
+                self.frame_transport = 'QMP file export (direct read unavailable)'
+        if self.frame_reader:
+            try:
+                data = self.frame_reader.read()
+            except OSError:
+                self.frame_reader.close()
+                self.frame_reader = None
+                self.frame_transport = 'QMP file export (direct read unavailable)'
+            else:
+                return self.finish_frame(data, video, fields if video is not None else None, started)
+        # Binary QMP export is the portable fallback to direct Windows reads.
         # The temporary file stays in the Windows cache when memory permits.
         # Keep high-frequency frame writes on the host temporary volume, not
         # beside a potentially HDD-backed root disk. Unique per session.
         if self.frame_directory is None:
             self.frame_directory = tempfile.TemporaryDirectory(prefix='ios-emulator-frame-')
         path = Path(self.frame_directory.name)/'framebuffer.raw'
-        started = time.perf_counter()
         if not path.exists():
             path.touch()
             if os.name == 'nt':
                 import ctypes
                 ctypes.windll.kernel32.SetFileAttributesW(str(path), 0x100)
-        size = FB_WIDTH * FB_HEIGHT * 4
         self.qmp.call('pmemsave', val=FB_ADDRESS, size=size, filename=path.as_posix())
         data = path.read_bytes()
+        return self.finish_frame(data, video, fields if video is not None else None, started)
+
+    def finish_frame(self, data, video, fields, started):
+        size = FB_WIDTH * FB_HEIGHT * 4
         if len(data) != size:
             raise RuntimeError('QEMU framebuffer could not be read completely.')
         self.frame_export_ms = (time.perf_counter()-started)*1000
+        if fields is not None:
+            after = struct.unpack('<8I', self.qtest.read(INPUT_ADDRESS + 32, 32))
+            # Seqlock: a panel copy starting during our read invalidates the
+            # image. Never show mixed pixels or mark this counter captured.
+            if after[:3] != fields[:3] or after[1] & 1:
+                self.frame_skips += 1
+                return None
         self.last_video_frame = video
         self.exported_frames += 1
         return data
@@ -433,6 +468,9 @@ class PcSession:
             raise RuntimeError('Guest input ring is full; orderly shutdown was not submitted.')
 
     def stop(self):
+        if self.frame_reader is not None:
+            self.frame_reader.close()
+            self.frame_reader = None
         if self.process is not None and self.process.poll() is None:
             try:
                 if self.qmp:

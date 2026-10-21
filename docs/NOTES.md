@@ -1,3 +1,12 @@
+## Active performance/screenshot work — 2026-10-21
+
+- User reports perceptual ~5fps; clarified export 30-40 means milliseconds, not FPS. Old counter counted captures/presentations even if pixels repeat. New status measures distinct frames actually painted in a trailing2sec window; repeated pixels filtered, idle decays0. System Information distinguishes visual/captured/presentation/target rates and host vs iOS. Settings refresh can change live, CPU/RAM locked while running.
+- Found native Windows QEMU lacks memory-backend-file (disposable probe); QMP gpa2hva supports mapping. New read-only WindowsFramebuffer validates both endpoints contiguous, opens own QEMU PROCESS_VM_READ only, reads fixed framebuffer, closes handle; automatic QMP export fallback. Seqlock after-read rejects concurrent panel copies.
+- Disposable128MiB QEMU patterned10,368,000-byte framebuffer: 30+30 byte-exact samples; QMP median34.47ms/p9539.28 vs direct4.12ms/p954.97. Does not establish iOS animation FPS. Actual new iOS boot direct path last export3.68ms.
+-57 host tests PASS including measurement semantics, exact mapping, noncontiguous reject, torn-copy reject/retry, fallback. Old run229? actual41992 shut down normally exit0. New run20261021-102412-800300 QEMU22956, kernel0094/4CPU/4096MiB/target60, GUI exec39041. No manual Home/Power in this fresh run. Booting; observe auto-unlock before claiming.
+- Refreshed Home/icon screenshot, captured real Settings About (iPhone X/16.7.16, serial/model N/A) and iOS Version16.7.16(20H392). Updated native dark settings shot. System info shot and controlled refresh-target/scroll comparison pending; README/main not yet updated this turn. Wallpaper remains black. Safari deferred.
+
+---
 ## Active checkpoint — icon and documentation — 2026-10-21
 
 - New user request resumes work; old 2% STOP below is historical (allowance reset, 2% used at start).

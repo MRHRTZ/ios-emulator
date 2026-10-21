@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'data/python-deps'))
 from pc_session import PcSession, FB_WIDTH, FB_HEIGHT, map_pointer
+from pc_diagnostics import VisualRate, system_information
 
 
 def control_icon(name, color="#d9dce5"):
@@ -110,6 +111,7 @@ class Worker(QObject):
         order = 0
         next_frame = next_poll = 0
         frames, fps, measured = 0, 0., time.monotonic()
+        previous_pixels = None
         try:
             self.session = PcSession(ROOT, self.settings['memory_mib'], self.kernel, self.overlay, self.settings['cpu_count'])
             self.state.emit('starting', False, 0)
@@ -122,7 +124,10 @@ class Worker(QObject):
                         command = self.commands.get_nowait()
                     except queue.Empty:
                         break
-                    if command[0] == 'shutdown' and not paused and not shutting_down:
+                    if command[0] == 'refresh':
+                        self.settings['fps'] = command[1]
+                        next_frame = 0
+                    elif command[0] == 'shutdown' and not paused and not shutting_down:
                         scheduled.clear()
                         self.session.request_shutdown()
                         shutting_down = True
@@ -169,11 +174,14 @@ class Worker(QObject):
                     next_poll = now + .25
                 if not paused and not shutting_down and now >= next_frame and not self.frame_pending.is_set():
                     data = self.session.frame()
-                    if data is not None:
+                    if data is not None and data != previous_pixels:
+                        previous_pixels = data
                         image = QImage(data, FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4, QImage.Format.Format_RGB32).copy()
                         self.frame_pending.set()
                         self.frame.emit(image)
                         frames += 1
+                    elif data is not None:
+                        self.session.duplicate_frames = getattr(self.session, 'duplicate_frames', 0) + 1
                     interval = 2. if self.session.stage == 'booting' else (.5 if self.session.stage in ('services', 'springboard') else 1 / self.settings['fps'])
                     next_frame = max(now + interval, time.monotonic())
                 if now - measured >= 2:
@@ -201,6 +209,8 @@ class Screen(QWidget):
     def __init__(self):
         super().__init__()
         self.image = QImage()
+        self.frame_serial = 0
+        self.visual_rate = VisualRate()
         self.rotation = 0
         self.down = False
         self.enabled_input = False
@@ -242,6 +252,7 @@ class Screen(QWidget):
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             image = self.image if not self.rotation else self.image.transformed(QTransform().rotate(90))
             painter.drawImage(self.frame_rect(), image)
+            self.visual_rate.painted(self.frame_serial)
 
     def mousePressEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton or not self.enabled_input:
@@ -542,6 +553,7 @@ class Window(QMainWindow):
             self.theme_group.addAction(action);theme_menu.addAction(action)
 
         help_menu = self.menuBar().addMenu('&Help')
+        help_menu.addAction('System Information...', self.system_info)
         help_menu.addAction('Controls & Shortcuts', self.help)
 
         self.log_dock = QDockWidget('Emulator Console Log', self)
@@ -695,6 +707,7 @@ class Window(QMainWindow):
         self.startup_wake_count = 0
         self.startup_last_wake = 0.
         self.screen.image = QImage()
+        self.screen.visual_rate = VisualRate()
         self.startup_unlock_tries = 0
         self.startup_unlock_at = 0.
         self.screen.message = 'Starting iOS...'
@@ -712,6 +725,7 @@ class Window(QMainWindow):
             self.worker.frame_pending.clear()
         if self.stopping or not self.worker: return
         self.screen.image = image
+        self.screen.frame_serial += 1
         self.screen.update()
         self.check_startup()
 
@@ -792,8 +806,8 @@ class Window(QMainWindow):
         self.restart_action.setEnabled(active and stage not in ('shutting-down','shutdown-stalled'))
         shutdown_ready = bool(self.worker and self.worker.session and self.worker.session.header and self.worker.session.header[7]&4)
         self.shutdown_action.setEnabled(stage=='display' and shutdown_ready)
-        self.settings_button.setEnabled(not active)
-        self.settings_action.setEnabled(not active)
+        self.settings_button.setEnabled(not self.shutting_down)
+        self.settings_action.setEnabled(not self.shutting_down)
         self.screen.enabled_input = active and input_ready and stage == 'display'
         self.screenshot_button.setEnabled(active and not self.screen.image.isNull())
         self.screenshot_action.setEnabled(active and not self.screen.image.isNull())
@@ -817,14 +831,17 @@ class Window(QMainWindow):
         }
         self.show_status_message(messages.get(stage, stage))
         self.progress.setVisible(stage in ('starting', 'booting', 'services', 'springboard', 'shutting-down') or (stage=='display' and self.auto_home_pending))
-        self.fps_label.setText(f'{fps:.1f} fps' if active else '')
+        self.capture_fps = fps
+        visual_fps = self.screen.visual_rate.fps() if active and not self.paused else 0.
+        self.fps_label.setText(f'Visual: {visual_fps:.1f} fps' if active else '')
         session=self.worker.session if self.worker else None
         if session:
             guest_rate=getattr(session,'guest_present_fps',None)
             guest_text=f'{guest_rate:.1f} fps' if guest_rate is not None else 'unavailable'
             self.fps_label.setToolTip(
-                f"Capture target: {self.settings['fps']} fps\nNew frames captured: {fps:.1f} fps\n"
-                f"Guest presentations: {guest_text}\n"
+                f"Visual changes painted: {visual_fps:.1f} fps\n"
+                f"Capture target: {self.settings['fps']} fps\nChanged frames captured: {fps:.1f} fps\n"
+                f"iOS framebuffer presentations: {guest_text} (may repeat pixels)\n"
                 f"Frame export: {getattr(session,'frame_export_ms',0.):.1f} ms\n"
                 'Unchanged frames are skipped; a still screen may show 0 fps.')
 
@@ -934,9 +951,6 @@ class Window(QMainWindow):
                 QMessageBox.warning(self, 'Screenshot', 'Failed to save screenshot image.')
 
     def preferences(self):
-        if self.worker:
-            QMessageBox.information(self, 'Settings', 'Please stop the emulator before changing settings.')
-            return
         dialog = QDialog(self)
         dialog.setWindowTitle('Emulator Settings')
         form = QFormLayout(dialog)
@@ -950,6 +964,8 @@ class Window(QMainWindow):
         ram=choices(range(1024,limits['memory_mib']+1,256),self.settings['memory_mib'],' MiB')
         rate=choices([n for n in (5,10,15,20,24,30,45,60,90,120) if n<=limits['fps']],self.settings['fps'],' fps')
         cores=choices(range(1,limits['cpu_count']+1),self.settings['cpu_count'])
+        ram.setEnabled(not bool(self.worker))
+        cores.setEnabled(not bool(self.worker))
         form.addRow('CPU cores:',cores)
         form.addRow('iOS memory:',ram)
         form.addRow('Display refresh target:',rate)
@@ -957,6 +973,7 @@ class Window(QMainWindow):
             f"Host RAM budget: 80% (QEMU overhead reserved).\n"
             f"Current QEMU guest limit: 4 GiB RAM / 4 CPUs.\n"
             "A higher refresh target does not guarantee faster guest rendering.\n"
+            "Refresh target can change live; stop iOS to change CPU or memory.\n"
             "Graphics: Software. Vulkan / OpenGL guest acceleration is under development.")
         note.setWordWrap(True);form.addRow(note)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -965,7 +982,35 @@ class Window(QMainWindow):
         form.addRow(buttons)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.settings.update(memory_mib=ram.currentData(),fps=rate.currentData(),cpu_count=cores.currentData())
+            if self.worker:
+                self.worker.submit('refresh', rate.currentData())
             self.save_settings()
+
+    def system_info(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle('System Information')
+        dialog.resize(650, 700)
+        layout = QVBoxLayout(dialog)
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setAccessibleName('System information and display measurements')
+        layout.addWidget(text)
+        def refresh():
+            session = self.worker.session if self.worker else None
+            value = system_information(ROOT, self.settings, host_limits(), session,
+                self.screen.visual_rate.fps() if not self.paused and self.worker else 0.,
+                getattr(self, 'capture_fps', 0.))
+            scroll = text.verticalScrollBar().value()
+            text.setPlainText(value)
+            text.verticalScrollBar().setValue(scroll)
+        refresh()
+        timer = QTimer(dialog)
+        timer.timeout.connect(refresh)
+        timer.start(1000)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
 
     def help(self):
         msg = (
