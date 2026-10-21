@@ -112,3 +112,12 @@ QEMU's PSCI power off. The GUI waits for a successful exit and platform-halt log
 implementation availability does not replace runtime/filesystem verification.
 **Force Stop** remains a power cut. If orderly shutdown takes more than two
 minutes, the GUI leaves the session available for diagnostics or Force Stop.
+
+
+## Visual frame rate and system information
+
+The status bar shows distinct frame changes actually painted over the last two seconds, not a refresh target. Idle screens can show zero. Identical captures are skipped. Help → System Information shows Windows CPU/RAM, iOS root version/build, emulated CPU/memory, software graphics, transport, and separate visual/capture/presentation rates. See [performance evidence](PERFORMANCE.md).
+
+Emulator Settings allows changing the display capture target while iOS is running. CPU and memory remain disabled until iOS stops. Increasing the target does not speed up iOS rendering.
+
+Mouse wheel input over the iOS display maps to a bounded swipe. Gestures are spaced to avoid overlapping contacts; it does not provide iOS GPU acceleration.

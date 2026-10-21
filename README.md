@@ -32,6 +32,14 @@ iPhone implementation.
 
 [Screenshot context and limitations](docs/SCREENSHOTS.md).
 
+<img src="docs/screenshots/windows-ios-about.jpg" width="270" alt="Actual iOS About screen">
+<img src="docs/screenshots/windows-ios-version.jpg" width="270" alt="Actual iOS 16.7.16 build 20H392">
+
+<img src="docs/screenshots/windows-system-info.jpg" width="600" alt="Windows host and emulated iOS system information">
+
+The status bar measures distinct visual changes, not the capture target.
+See [measured performance and remaining bottlenecks](docs/PERFORMANCE.md).
+
 ## Start on Windows
 
 ```powershell

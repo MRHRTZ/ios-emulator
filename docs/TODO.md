@@ -104,7 +104,7 @@ must report missing prerequisites honestly, never label the test PID 1 as iOS.
 - [x] Compact hideable status bar and animated loading indicator.
 - [x] Host-aware CPU/RAM/refresh settings within guest limits.
 - [x] Remove extra full frame-interval delay after framebuffer export.
-- [ ] Runtime-verify automatic Home after each fresh boot.
+- [x] Verify automatic Home on fresh 2/4-CPU boots (0093/0094); repeat after startup changes.
 - [x] Runtime-verify kernel0091+ physical typing, Backspace and modifier cleanup after ASCII paste.
 - [ ] Runtime-verify focus-loss cleanup while a physical key is actively held.
 - [ ] Diagnose Settings black content and wallpaper.
@@ -121,3 +121,12 @@ must report missing prerequisites honestly, never label the test PID 1 as iOS.
 - [x] Bound host frame delivery to one outstanding frame to avoid stale-frame queues.
 - [ ] Runtime-check motion latency at several refresh targets; guest software rendering remains a bottleneck.
 - [ ] Chrome installation skipped: no local IPA supplied/found; revisit when a compatible installable package is available.
+
+## Application identity and performance diagnostics
+
+- [x] Generate a unique transparent phone/orbit icon and install PNG/ICO as the default application icon.
+- [x] Keep README at root, move engineering Markdown into docs, and ignore local root AGENTS.md.
+- [x] Separate distinct visual changes, captured images, iOS presentations and the capture target.
+- [x] Reduce Windows frame transport overhead with validated read-only direct capture and portable fallback.
+- [x] Capture updated icon/Home, dark settings, system information and actual iOS version/build screenshots.
+- [ ] Diagnose low iOS submission/vsync rate using kernel0095 pipeline counters and controlled motion traces.
