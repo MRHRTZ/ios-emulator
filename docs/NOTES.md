@@ -2,7 +2,7 @@
 
 - User requested iOSEmu branding and explicitly asked to pull first because main README changed. Pulled dev/window-native (already current) and fast-forwarded the separate main documentation worktree fromd8be0f6 to0f7677d. Preserved the user's new centered hero, screenshot tables and README layout; only icon alt text needed the same branding.
 - Shared APP_NAME=iOSEmu now supplies application/window name, Windows AppUserModelID MRHRTZ.iOSEmu, console/error/settings/controls titles and worker name. Development README/docs match. Existing data paths and repository URLs remain valid.
--61 host tests PASS; offscreen Qt application/window names explicitly verified as iOSEmu; diff check passed. Existing GUI sessions retain the old title until relaunched. No guest restart or translator work performed in this naming task.
+-61 host tests PASS; offscreen Qt application/window names explicitly verified as iOSEmu; diff check passed. Source f0bb331 pushed; Windows CI39544785863 SUCCESS. Main README icon branding446d30b pushed on top of the pulled user README0f7677d. Existing GUI sessions retain the old title until relaunched. No guest restart or translator work performed in this naming task.
 
 ---
 ## STOP / separate GPU translator scaffold — 2026-10-21
