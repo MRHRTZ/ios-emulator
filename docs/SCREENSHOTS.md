@@ -6,7 +6,7 @@ All images below are actual native Windows application captures from 2026-10-21,
 
 ![Native emulator Home with current icon](screenshots/windows-home.jpg)
 
-Kernel0094, four QEMU CPUs,4096 MiB iOS memory,60 capture target. Run20261021-102412-800300 reached Home without agent Home/Power input. The wallpaper trial still displays black. The Visual counter counts distinct images painted; idle0fps is expected and the target does not establish animation speed.
+Latest Home capture:kernel0095, four QEMU CPUs,4096 MiB iOS memory,15 capture target, NVIDIA OpenGL host presentation. Run20261021-105027-498100 reached Home without agent Home/Power input. The wallpaper trial still displays black. The Visual counter counts distinct images painted; idle0fps is expected and the target does not establish animation speed.
 
 ## Actual iOS identity
 
@@ -26,6 +26,6 @@ Help → System Information shows Windows11 build26200, Intel i5-14400F,16 logic
 
 ![Current native dark settings](screenshots/windows-settings-dark.jpg)
 
-Current icon, dropdown resource inputs and readable OK/Cancel. CPU/memory can change while stopped; while running those controls are disabled and the capture target can change live.
+Current icon, dropdown resource inputs, Auto/Software/OpenGL/Vulkan host renderer choices and readable OK/Cancel. The latest settings capture reports active NVIDIA RTX5070 OpenGL; Vulkan is unavailable until a presenter exists. CPU/memory can change while stopped; while running those controls are disabled and the capture target can change live.
 
 These captures do not demonstrate iOS GPU acceleration, Safari webpage drawing or general application compatibility. Earlier two/four-core RTC pause/resume and clean shutdown evidence is recorded in NOTES.md. Firmware, network captures, full diagnostics and private iOS content stay outside Git. Apple and iOS names belong to their owners; this independent research project has no Apple affiliation.

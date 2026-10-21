@@ -33,8 +33,13 @@ A native drag at target60 produced a long Settings scroll. Over the following ~8
 
 An8-second QEMU process-time observation while Settings/native preferences were open consumed about3.76 host CPU cores. This is high utilization, but does not distinguish compositor work, service restarts, scheduler work or emulated idle loops. Do not attribute all of it to graphics without more profiling.
 
-Patch0095 adds optional QEMU-only counters outside the HID ring: submitted swaps, vsync callbacks, callback execution time and the panel-copy divisor. The frontend capability-detects them. Comparing these rates with panel presentations will distinguish low upstream submission from slow kernel timer/panel work. Local SweetFramebuffer.cpp cross-compile passed; kernel CI39539338092 is pending.
+Patch0095 adds optional QEMU-only counters outside the HID ring: submitted swaps, vsync callbacks, callback execution time and the panel-copy divisor. The frontend capability-detects them. Comparing these rates with panel presentations will distinguish low upstream submission from slow kernel timer/panel work. Local SweetFramebuffer.cpp cross-compile and kernel CI39539338092 passed. The0095 four-core boot reached Home; idle vsync measured~53–54.5Hz with~0.01ms callback work. Controlled motion profiling is still pending at the user-requested stop.
 
 Record controlled repeated scrolling at several capture targets after the drag fix, separating idle time from motion. Check visual rate and input response with the direct path; profile iOS compositor/TCG time before attempting kernel-side graphics changes. A usable iOS graphics driver/translation backend remains substantial unfinished work. Safari testing stays deferred by the user.
 
 References: [QEMU execution and accelerators](https://www.qemu.org/docs/master/system/introduction.html), [QEMU monitor and gpa2hva](https://www.qemu.org/docs/master/system/monitor).
+
+
+## OpenGL host presentation
+
+Auto/Software/OpenGL host presentation is implemented; native OpenGL reports NVIDIA RTX5070. Deterministic red/blue GPU framebuffer readback and a Software/OpenGL roundtrip passed. Vulkan presentation is unavailable. This changes how Windows displays the framebuffer, not the software iOS compositor. No iOS GPU translator has been implemented.61 host tests and Windows CI39541003669 passed.
