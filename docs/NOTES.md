@@ -1,3 +1,10 @@
+## Application renamed to iOSEmu — 2026-10-21
+
+- User requested iOSEmu branding and explicitly asked to pull first because main README changed. Pulled dev/window-native (already current) and fast-forwarded the separate main documentation worktree fromd8be0f6 to0f7677d. Preserved the user's new centered hero, screenshot tables and README layout; only icon alt text needed the same branding.
+- Shared APP_NAME=iOSEmu now supplies application/window name, Windows AppUserModelID MRHRTZ.iOSEmu, console/error/settings/controls titles and worker name. Development README/docs match. Existing data paths and repository URLs remain valid.
+-61 host tests PASS; offscreen Qt application/window names explicitly verified as iOSEmu; diff check passed. Existing GUI sessions retain the old title until relaunched. No guest restart or translator work performed in this naming task.
+
+---
 ## STOP / separate GPU translator scaffold — 2026-10-21
 
 - User explicitly requested preparing a sibling translator workspace and ending work in this emulator chat, without running translator RE/implementation here. Created D:/Data/Apple/IOS/ios-gpu-translator with local ignored AGENTS.md, README.md, .gitignore, docs/TODO.md and docs/HANDOFF.md. Documentation only: no REA installation, no binary RE session, no translator code, no GitHub repository created.

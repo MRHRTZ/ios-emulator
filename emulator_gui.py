@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QDialogButtonBo
     QPlainTextEdit, QSpinBox, QSizePolicy, QStyle, QStyleFactory, QToolBar,
     QToolButton, QToolTip, QVBoxLayout, QWidget)
 
+APP_NAME = 'iOSEmu'
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'data/python-deps'))
@@ -92,7 +93,7 @@ class Worker(QObject):
         self.commands = queue.Queue(maxsize=512)
         self.stopping = threading.Event()
         self.frame_pending = threading.Event()
-        self.thread = threading.Thread(target=self.run, daemon=True, name='iOS emulator')
+        self.thread = threading.Thread(target=self.run, daemon=True, name=APP_NAME)
         self.session = None
 
     def submit(self, *command):
@@ -495,7 +496,7 @@ class Spinner(QWidget):
 class Window(QMainWindow):
     def __init__(self, auto_start=True, kernel=None, overlay=None):
         super().__init__()
-        self.setWindowTitle('iOS Emulator')
+        self.setWindowTitle(APP_NAME)
         self.setWindowIcon(QIcon(str(ROOT / 'assets/app-icon.ico')))
         self.setObjectName('iosEmulatorWindow')
         self.setMinimumSize(540, 600)
@@ -634,7 +635,7 @@ class Window(QMainWindow):
         help_menu.addAction('System Information...', self.system_info)
         help_menu.addAction('Controls & Shortcuts', self.help)
 
-        self.log_dock = QDockWidget('Emulator Console Log', self)
+        self.log_dock = QDockWidget(f'{APP_NAME} Console Log', self)
         self.log_dock.setObjectName('logDock')
         self.logs = QPlainTextEdit()
         self.logs.setReadOnly(True)
@@ -969,7 +970,7 @@ class Window(QMainWindow):
         if error:
             self.append_log(error)
             self.log_dock.show()
-            QMessageBox.warning(self, 'Emulator Error', error)
+            QMessageBox.warning(self, f'{APP_NAME} Error', error)
         if self.restarting:
             self.restarting = False
             QTimer.singleShot(100, self.start)
@@ -1034,7 +1035,7 @@ class Window(QMainWindow):
 
     def preferences(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle('Emulator Settings')
+        dialog.setWindowTitle(f'{APP_NAME} Settings')
         form = QFormLayout(dialog)
         limits=host_limits()
         def choices(values, current, suffix=''):
@@ -1129,7 +1130,7 @@ class Window(QMainWindow):
             " â€¢ F11: Toggle Full Screen\n\n"
             "Click the iOS display to capture the PC keyboard (kernel 0091+).\nCtrl+V pastes printable ASCII from the host clipboard (US layout)."
         )
-        QMessageBox.information(self, "Emulator Controls", msg)
+        QMessageBox.information(self, f'{APP_NAME} Controls', msg)
 
     def closeEvent(self, event):
         if self.worker:
@@ -1142,10 +1143,10 @@ class Window(QMainWindow):
 
 def main(auto_start=True, kernel=None, overlay=None):
     if sys.platform == 'win32':
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('MRHRTZ.iOSEmulator')
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(f'MRHRTZ.{APP_NAME}')
     app = QApplication([sys.argv[0]])
     app.setWindowIcon(QIcon(str(ROOT / 'assets/app-icon.ico')))
-    app.setApplicationName('iOS Emulator')
+    app.setApplicationName(APP_NAME)
     app.setOrganizationName('MRHRTZ')
     for style in ('windowsvista', 'Windows'):
         if style.lower() in [s.lower() for s in QStyleFactory.keys()]:

@@ -25,7 +25,7 @@ The real iOS boot then selected direct reads and recorded a 3.68 ms export. This
 
 The status bar now reports **Visual**, counting distinct images actually painted over the trailing two seconds. Identical captured pixels and repaints of the same image do not inflate it; an idle screen decays to zero. Help → System Information separately reports visual changes, changed captures, iOS panel presentations (which can repeat pixels), target and transfer time. These are whole-frame changes, not per-element animation analysis or input-to-photon latency. Frames not captured cannot be counted.
 
-CPU/memory changes require stopping iOS. The capture target can now change live in Emulator Settings, allowing comparison without restarting the guest.
+CPU/memory changes require stopping iOS. The capture target can now change live in iOSEmu Settings, allowing comparison without restarting the guest.
 
 ## Remaining work
 

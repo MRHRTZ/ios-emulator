@@ -1,6 +1,6 @@
-# ios-emulator
+# iOSEmu
 
-<img src="assets/app-icon.png" width="96" alt="Virtual device orbit application icon">
+<img src="assets/app-icon.png" width="96" alt="iOSEmu application icon">
 
 An **experimental, educational and research project** exploring real iOS
 userspace on a patched open-source XNU kernel under QEMU. Native Windows x64
