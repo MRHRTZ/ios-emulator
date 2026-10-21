@@ -202,6 +202,7 @@ class Worker(QObject):
 
 class Screen(QWidget):
     touch = Signal(bool, int, int)
+    swipe = Signal(int, int, int, int, float, float)
     keyboard = Signal(int, bool)
     text_input = Signal(str)
     input_notice = Signal(str)
@@ -216,6 +217,7 @@ class Screen(QWidget):
         self.enabled_input = False
         self.last = (540, 1200)
         self.last_move = 0
+        self.wheel_until = 0.
         self.capture_keyboard = True
         self.held_keys = {}
         self.message = 'Click Start to boot iOS'
@@ -281,6 +283,22 @@ class Screen(QWidget):
                 # an up-only coordinate can otherwise look like a tap to iOS.
                 self.touch.emit(True, *self.last)
             self.release_touch()
+
+    def wheelEvent(self, event):
+        if not self.enabled_input or self.down or self.coordinates(event.position()) is None:
+            event.ignore()
+            return
+        delta = event.angleDelta().y() or event.pixelDelta().y()
+        if not delta:
+            event.ignore()
+            return
+        now = time.monotonic()
+        if now >= self.wheel_until:
+            x, _ = self.coordinates(event.position())
+            distance = max(-1100, min(1100, delta * 5))
+            self.swipe.emit(x, 1200, x, 1200+distance, .35, 0.)
+            self.wheel_until = now+.45
+        event.accept()
 
     def release_touch(self):
         if self.down:
@@ -472,6 +490,7 @@ class Window(QMainWindow):
 
         self.screen = Screen()
         self.screen.touch.connect(self.touch)
+        self.screen.swipe.connect(self.swipe)
         self.screen.keyboard.connect(self.keyboard)
         self.screen.text_input.connect(self.paste_text)
         self.screen.input_notice.connect(lambda text:self.show_status_message(text,6000))
@@ -905,6 +924,10 @@ class Window(QMainWindow):
     def touch(self, down, x, y):
         if self.worker:
             self.worker.submit('input', 1, 0, down, x, y)
+
+    def swipe(self, x0, y0, x1, y1, duration, hold):
+        if self.worker and self.screen.enabled_input:
+            self.worker.submit('gesture', x0, y0, x1, y1, duration, hold)
 
     def capture_keyboard(self, enabled):
         self.screen.release_keys();self.screen.capture_keyboard=enabled

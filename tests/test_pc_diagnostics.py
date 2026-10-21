@@ -7,6 +7,24 @@ from pc_diagnostics import VisualRate, system_information, PipelineRates, PIPELI
 
 
 class DisplayMeasurementTests(unittest.TestCase):
+    def test_wheel_swipe_is_bounded_and_does_not_overlap_contact(self):
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtCore import QPoint, QPointF
+        from emulator_gui import Screen
+        from unittest.mock import Mock
+        app = QApplication.instance() or QApplication([])
+        screen = Screen(); screen.resize(540,1200); screen.enabled_input = True
+        event = SimpleNamespace(position=lambda:QPointF(270,600),
+            angleDelta=lambda:QPoint(0,-120), pixelDelta=lambda:QPoint(), accept=Mock(),ignore=Mock())
+        gestures=[]
+        screen.swipe.connect(lambda *args:gestures.append(args))
+        screen.wheelEvent(event)
+        self.assertEqual(gestures,[(540,1200,540,600,.35,0.)])
+        screen.down=True;screen.wheelEvent(event)
+        self.assertEqual(len(gestures),1)
+        event.ignore.assert_called_once()
+        screen.down=False;screen.close()
+
     def test_pipeline_counters_distinguish_submit_vsync_and_work_with_wrap(self):
         rates = PipelineRates()
         fields = [PIPELINE_MAGIC, 0xfffffffe, 0xfffffffc, 1000, 0xffffff00, 1000, 2, 1]
