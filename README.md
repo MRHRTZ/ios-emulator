@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="assets/app-icon.png" width="112" alt="iOS Emulator project icon">
+  <img src="assets/app-icon.png" width="112" alt="iOSEmu project icon">
 
   <h1>iOSEmu</h1>
 
