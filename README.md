@@ -1,5 +1,7 @@
 # ios-emulator
 
+<img src="assets/app-icon.png" width="96" alt="Virtual device orbit project icon">
+
 An experimental educational and research project running real iOS userland on a patched open-source XNU kernel under QEMU. Native Windows development is on **dev/window-native**; this main branch retains the cross-platform QEMU and original phone-port baseline.
 
 This independent project is not affiliated with, endorsed by, sponsored by, or developed in cooperation with Apple Inc. Apple, iPhone and iOS are trademarks of Apple Inc. Apple firmware and filesystem images are downloaded separately and are not included in this repository. Third-party components retain their own licenses.
@@ -10,9 +12,18 @@ Use the [dev/window-native branch](https://github.com/MRHRTZ/ios-emulator/tree/d
 
 Real iOS 16.7.16 / iPhone X SpringBoard, touch input, host UTC, multicore boot and network traffic have been observed under Windows QEMU. Safari can receive HTML but page content remains blank. GPU acceleration, application compatibility, responsiveness, native APFS preparation and bundling remain unfinished. A high display refresh target does not guarantee a high guest frame rate.
 
-See the [development checklist](https://github.com/MRHRTZ/ios-emulator/blob/dev/window-native/TODO.md) and [verified status](https://github.com/MRHRTZ/ios-emulator/blob/dev/window-native/docs/STATUS.md) for evidence and pending validation.
+See the [development checklist](https://github.com/MRHRTZ/ios-emulator/blob/dev/window-native/docs/TODO.md) and [verified status](https://github.com/MRHRTZ/ios-emulator/blob/dev/window-native/docs/STATUS.md) for evidence and pending validation.
 
 Branch policy: **dev/window-native** for active Windows development; **window-native** for a separate Windows release promotion; **main** for the stable cross-platform baseline. Availability of development features does not imply they have been released on main.
+
+## Windows development screenshots
+
+These are actual captures from **dev/window-native**, not features released on main.
+
+<img src="docs/screenshots/windows-home.jpg" width="330" alt="Native Windows emulator displaying real iOS Home">
+<img src="docs/screenshots/windows-settings-dark.jpg" width="330" alt="Native emulator settings in dark mode">
+
+See [capture conditions and limitations](docs/SCREENSHOTS.md). Home used kernel0094, four CPUs, 4096 MiB and a 60 Hz host target; manual Home was used.
 
 ## Original phone port
 
