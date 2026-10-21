@@ -18,12 +18,17 @@ Branch policy: **dev/window-native** for active Windows development; **window-na
 
 ## Windows development screenshots
 
-These are actual captures from **dev/window-native**, not features released on main.
+Actual captures from **dev/window-native**; these development features are not released on main.
 
-<img src="docs/screenshots/windows-home.jpg" width="330" alt="Native Windows emulator displaying real iOS Home">
-<img src="docs/screenshots/windows-settings-dark.jpg" width="330" alt="Native emulator settings in dark mode">
+<img src="docs/screenshots/windows-home.jpg" width="270" alt="Latest native emulator Home screen with transparent orbit icon">
+<img src="docs/screenshots/windows-ios-about.jpg" width="270" alt="Actual iOS About screen identifying iPhone X and iOS 16.7.16">
+<img src="docs/screenshots/windows-ios-version.jpg" width="270" alt="Actual iOS version and build 16.7.16 20H392">
 
-See [capture conditions and limitations](docs/SCREENSHOTS.md). Home used kernel0094, four CPUs, 4096 MiB and a 60 Hz host target; manual Home was used.
+<img src="docs/screenshots/windows-system-info.jpg" width="600" alt="Windows host and emulated iOS system information with separate display measurements">
+
+<img src="docs/screenshots/windows-settings-dark.jpg" width="330" alt="Updated native dark settings with readable dropdowns and buttons">
+
+The host is Windows 11 on an Intel i5-14400F with 31.8 GiB visible RAM. This test allocates four emulated ARM64 CPUs and 4096 MiB to iOS. Real iOS Settings reports **iPhone X, iOS 16.7.16 (20H392)**. A capture target is not an animation frame rate: the UI still has substantial performance limits. See [capture conditions](docs/SCREENSHOTS.md) and [performance evidence](docs/PERFORMANCE.md).
 
 ## Original phone port
 

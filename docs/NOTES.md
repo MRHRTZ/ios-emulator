@@ -1,3 +1,7 @@
+## Windows documentation refresh — 2026-10-21
+
+README screenshots updated for transparent application icon, actual iOS About/version20H392 and native System Information/dark settings. Development observations only; implementation remains on dev/window-native. Performance report separates export milliseconds from animation FPS. See docs/PERFORMANCE.md and SCREENSHOTS.md.
+
 # iOS 16 on sweet (Redmi Note 10 Pro, SM7150) - working notes
 
 ## Agent handoff / active work (2026-10-15, latest)
