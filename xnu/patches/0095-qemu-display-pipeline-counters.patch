@@ -1,0 +1,88 @@
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -108,6 +108,7 @@
+ 	int32_t       fOffX, fOffY;             /* logical origin of the panel */
+ 	volatile uint32_t *fPCVideo;    /* QEMU-only reserved input-page video header */
+ 	void beginFrame(void);
++	void recordVsyncCost(uint64_t started);
+ 	void endFrame(uint64_t started);
+ 	uintptr_t     fPixels;          /* kernel mapping of the panel memory */
+ 	IOMemoryMap  *fMap;
+@@ -199,6 +200,9 @@
+ 	    SecureDTGetProperty(pc, "reg", (const void **)&reg, &regSize) == kSuccess &&
+ 	    regSize == 2 * sizeof(uintptr_t) && reg[0] == 0x9e000000 && reg[1] == 0x4000) {
+ 		fPCVideo = (volatile uint32_t *)ml_io_map(reg[0], reg[1]);
++		if (fPCVideo) {
++			for (unsigned int i = 1024; i < 1032; i++) { fPCVideo[i] = 0; }
++		}
+ 	}
+ 	fVsync = IOTimerEventSource::timerEventSource(this, &AppleCLCD::vsyncFired);
+ 	if (fVsync == NULL || fWorkLoop->addEventSource(fVsync) != kIOReturnSuccess) {
+@@ -208,6 +212,12 @@
+ 	uint32_t hz = 10;
+ 	PE_parse_boot_argn("sweetfb_hz", &hz, sizeof(hz));
+ 	fFlushTicks = (hz == 0 || hz >= 60) ? 1 : 60 / hz;
++	if (fPCVideo) {
++		fPCVideo[1030] = fFlushTicks;
++		fPCVideo[1031] = 1;
++		__asm__ volatile("dmb sy" ::: "memory");
++		fPCVideo[1024] = 0x50464d31; /* PFM1, diagnostic counters v1 */
++	}
+ 	fVsync->setTimeoutUS(SWEET_FB_VSYNC_US);
+ 
+ 	setProperty(kIOUserClientClassKey, "IOMobileFramebufferUserClient");
+@@ -249,12 +259,30 @@
+ 	}
+ }
+ 
++/* QEMU-only diagnostic block at input page +0x1000, outside the HID ring.
++ * Counters are independently sampled modulo 2^32; no image/control protocol.
++ * magic, vsyncs, submitted swaps, last callback us, total callback us,
++ * maximum callback us, flush divisor, version. Phone mappings stay untouched. */
++void
++AppleCLCD::recordVsyncCost(uint64_t started)
++{
++	if (fPCVideo) {
++		uint64_t ns = 0;
++		absolutetime_to_nanoseconds(mach_absolute_time() - started, &ns);
++		uint32_t us = (uint32_t)(ns / 1000);
++		fPCVideo[1027] = us;
++		fPCVideo[1028] += us;
++		if (us > fPCVideo[1029]) { fPCVideo[1029] = us; }
++	}
++}
++
+ void
+ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ {
+ 	AppleCLCD *fb = (AppleCLCD *)owner;
+ 	uint64_t now = mach_absolute_time();
+ 	uint64_t count = ++fb->fVsyncCount;
++	if (fb->fPCVideo) { fb->fPCVideo[1025]++; }
+ 	uint64_t values[6] = {
+ 		(uint32_t)count, (uint32_t)(count >> 32),
+ 		(uint32_t)now, (uint32_t)(now >> 32),
+@@ -284,6 +312,7 @@
+ 			}
+ 			fb->endFrame(now);
+ 		}
++		fb->recordVsyncCost(now);
+ 		sender->setTimeoutUS(SWEET_FB_VSYNC_US);
+ 		return;
+ 	}
+@@ -303,6 +332,7 @@
+ 		fb->endFrame(now);
+ 		IOFreeData(rec, SWEET_FB_SWAP_REC_SIZE);
+ 	}
++	fb->recordVsyncCost(now);
+ 	sender->setTimeoutUS(SWEET_FB_VSYNC_US);
+ }
+ 
+@@ -349,6 +379,7 @@
+ 	IOLockLock(fLock);
+ 	memcpy(fPending, rec, SWEET_FB_SWAP_REC_SIZE);
+ 	fDirty = true;
++	if (fPCVideo) { fPCVideo[1026]++; }
+ 	IOLockUnlock(fLock);
+ 	if ((++sweet_fb_swap_count % 1000) == 0) {
+ 		IOLog("SWEET FB: %llu swaps\n", sweet_fb_swap_count);
