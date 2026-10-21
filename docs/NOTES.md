@@ -3,6 +3,7 @@
 - New user request resumes work; old 2% STOP below is historical (allowance reset, 2% used at start).
 - Generated orbit/device artwork, saved assets/app-icon.png plus seven-size ICO; QApplication and Window load it, Windows AppUserModelID set. Host suite: 50 PASS. Native GUI titlebar icon observed; user then requested transparent phone/ring only. Updated PNG/ICO alpha verified (transparent corner), no tile/border. Relaunch needed for revised artwork.
 - Moved TODO/NOTES and kernel README into docs; root README retained. Root AGENTS.md retained locally and untracked/ignored. Main documentation receives actual Home/settings screenshots with branch/boot caveats and project icon; no implementation promoted.
+- Pushes: dev dc92dd0; main documentation c73be3d. Windows CI39535845671 SUCCESS (50 tests). New GUI exec85555/window2166380 and QEMU41992 run20261021-095720-287600, kernel0094/4CPU/4096MiB, automatically started. Transparent icon visibly verified on native titlebar. At latest observation logo progressed to black display; log panel opened for diagnostics, no manual Home/Power. Automatic unlock and wallpaper remain UNVERIFIED. GUI left running.
 - Old GUI no longer has a native window. Do not infer auto-unlock or wallpaper success from stale active.json. Safari remains deferred.
 
 ---
