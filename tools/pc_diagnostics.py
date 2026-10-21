@@ -57,7 +57,7 @@ class VisualRate:
         return len(self.times)/self.window
 
 
-def system_information(root, settings, limits, session=None, visual_fps=0., capture_fps=0.):
+def system_information(root, settings, limits, session=None, visual_fps=0., capture_fps=0., presenter='Software / Qt raster'):
     """No account names, paths, network identifiers or hardware serials."""
     cpu = platform.processor() or platform.machine()
     if os.name == 'nt':
@@ -82,6 +82,7 @@ def system_information(root, settings, limits, session=None, visual_fps=0., capt
         f'CPU: {cpu}',
         f'Logical CPUs: {os.cpu_count()}    RAM: {limits["host_mib"]/1024:.1f} GiB',
         f'Python: {platform.python_version()} ({platform.machine()})',
+        f'Windows display: {presenter}',
         '',
         'EMULATED iOS',
         f'iOS root metadata: {root_info.get("version", "Unavailable")} ({root_info.get("build", "Unavailable")})',

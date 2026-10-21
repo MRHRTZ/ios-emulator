@@ -7,6 +7,15 @@ from pc_diagnostics import VisualRate, system_information, PipelineRates, PIPELI
 
 
 class DisplayMeasurementTests(unittest.TestCase):
+    def test_auto_uses_only_hardware_gl_and_vulkan_is_not_silently_accepted(self):
+        from pc_renderer import resolve_renderer
+        self.assertEqual(resolve_renderer('Auto', {'available':True,'hardware':True}), 'OpenGL')
+        self.assertEqual(resolve_renderer('Auto', {'available':True,'hardware':False}), 'Software')
+        self.assertEqual(resolve_renderer('Software', {'available':True,'hardware':True}), 'Software')
+        self.assertEqual(resolve_renderer('OpenGL', {'available':False}), 'Software')
+        with self.assertRaisesRegex(ValueError, 'not implemented'):
+            resolve_renderer('Vulkan', {'available':True,'hardware':True})
+
     def test_wheel_swipe_is_bounded_and_does_not_overlap_contact(self):
         from PySide6.QtWidgets import QApplication
         from PySide6.QtCore import QPoint, QPointF

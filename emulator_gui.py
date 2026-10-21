@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'data/python-deps'))
 from pc_session import PcSession, FB_WIDTH, FB_HEIGHT, map_pointer
 from pc_diagnostics import VisualRate, system_information
+from pc_renderer import GLViewport, opengl_capability, resolve_renderer
 
 
 def control_icon(name, color="#d9dce5"):
@@ -212,6 +213,9 @@ class Screen(QWidget):
         self.image = QImage()
         self.frame_serial = 0
         self.visual_rate = VisualRate()
+        self.gl_view = None
+        self.renderer_description = 'Software / Qt raster'
+        self.renderer_warning = ''
         self.rotation = 0
         self.down = False
         self.enabled_input = False
@@ -245,7 +249,12 @@ class Screen(QWidget):
         return map_pointer(position.x(), position.y(), r.x(), r.y(), r.width(), r.height(), self.rotation, clamp)
 
     def paintEvent(self, event):
+        if self.gl_view is not None:
+            return
         painter = QPainter(self)
+        self.paint_frame(painter)
+
+    def paint_frame(self, painter, count=True):
         painter.fillRect(self.rect(), Qt.GlobalColor.black)
         if self.image.isNull():
             painter.setPen(Qt.GlobalColor.lightGray)
@@ -254,7 +263,48 @@ class Screen(QWidget):
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             image = self.image if not self.rotation else self.image.transformed(QTransform().rotate(90))
             painter.drawImage(self.frame_rect(), image)
-            self.visual_rate.painted(self.frame_serial)
+            if count:
+                self.visual_rate.painted(self.frame_serial)
+
+    def configure_renderer(self, mode):
+        capability = opengl_capability()
+        selected = resolve_renderer(mode, capability)
+        self.renderer_warning = ''
+        if selected == 'OpenGL':
+            if self.gl_view is None:
+                self.gl_view = GLViewport(self)
+                self.gl_view.setGeometry(self.rect())
+                self.gl_view.show()
+                QTimer.singleShot(500, self.verify_renderer)
+            self.renderer_description = 'OpenGL / ' + capability['renderer']
+            if not capability.get('hardware'):
+                self.renderer_warning = 'This OpenGL implementation may be software; see the reported renderer.'
+        else:
+            if self.gl_view is not None:
+                self.gl_view.hide()
+                self.gl_view.deleteLater()
+                self.gl_view = None
+            self.renderer_description = 'Software / Qt raster'
+            if mode == 'OpenGL':
+                self.renderer_warning = capability.get('reason', 'OpenGL unavailable; using Software.')
+        self.update()
+
+    def verify_renderer(self):
+        if self.gl_view is not None and self.isVisible() and not self.gl_view.isValid():
+            self.configure_renderer('Software')
+            self.renderer_warning = 'OpenGL widget initialization failed; using Software.'
+            self.input_notice.emit(self.renderer_warning)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.gl_view is not None:
+            self.gl_view.setGeometry(self.rect())
+
+    def update(self, *args):
+        if self.gl_view is not None:
+            self.gl_view.update()
+        else:
+            super().update(*args)
 
     def mousePressEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton or not self.enabled_input:
@@ -461,7 +511,7 @@ class Window(QMainWindow):
         self.kernel, self.overlay = kernel, overlay
         self.settings_path = ROOT / 'data/gui/settings.json'
         self.limits = host_limits()
-        self.settings = {'memory_mib': 2048, 'fps': 15, 'cpu_count': 1, 'theme': 'Auto', 'status_bar': True}
+        self.settings = {'memory_mib': 2048, 'fps': 15, 'cpu_count': 1, 'theme': 'Auto', 'status_bar': True, 'renderer': 'Auto'}
         self.stage = 'stopped'
         self.stopping = False
         self.auto_home_pending = True
@@ -483,12 +533,15 @@ class Window(QMainWindow):
                     self.settings['fps'] = saved['fps']
                 self.settings['theme'] = saved.get('theme', 'Auto') if saved.get('theme') in ('Auto','Light','Dark') else 'Auto'
                 self.settings['status_bar'] = bool(saved.get('status_bar',True))
+                if saved.get('renderer') in ('Auto', 'Software', 'OpenGL'):
+                    self.settings['renderer'] = saved['renderer']
             except (OSError, ValueError):
                 pass
 
         self.apply_theme()
 
         self.screen = Screen()
+        self.screen.configure_renderer(self.settings['renderer'])
         self.screen.touch.connect(self.touch)
         self.screen.swipe.connect(self.swipe)
         self.screen.keyboard.connect(self.keyboard)
@@ -993,17 +1046,31 @@ class Window(QMainWindow):
         ram=choices(range(1024,limits['memory_mib']+1,256),self.settings['memory_mib'],' MiB')
         rate=choices([n for n in (5,10,15,20,24,30,45,60,90,120) if n<=limits['fps']],self.settings['fps'],' fps')
         cores=choices(range(1,limits['cpu_count']+1),self.settings['cpu_count'])
+        renderer = QComboBox()
+        renderer.setAccessibleName('Host display renderer')
+        capability = opengl_capability()
+        for name in ('Auto', 'Software', 'OpenGL', 'Vulkan'):
+            renderer.addItem(name, name)
+        renderer.setCurrentIndex(renderer.findData(self.settings['renderer']))
+        renderer.model().item(3).setEnabled(False)
+        renderer.model().item(3).setToolTip('Vulkan presentation is not implemented in this application.')
+        if not capability.get('available'):
+            renderer.model().item(2).setEnabled(False)
+            renderer.model().item(2).setToolTip(capability.get('reason', 'OpenGL unavailable.'))
         ram.setEnabled(not bool(self.worker))
         cores.setEnabled(not bool(self.worker))
         form.addRow('CPU cores:',cores)
         form.addRow('iOS memory:',ram)
         form.addRow('Display refresh target:',rate)
+        form.addRow('Host display renderer:',renderer)
         note=QLabel(f"Host: {limits['host_mib']/1024:.1f} GiB RAM, {os.cpu_count()} logical CPUs.\n"
             f"Host RAM budget: 80% (QEMU overhead reserved).\n"
             f"Current QEMU guest limit: 4 GiB RAM / 4 CPUs.\n"
             "A higher refresh target does not guarantee faster guest rendering.\n"
             "Refresh target can change live; stop iOS to change CPU or memory.\n"
-            "Graphics: Software. Vulkan / OpenGL guest acceleration is under development.")
+            "OpenGL uses the host renderer reported below.\n"
+            "iOS graphics still use software; a VirtIO GPU / Metal driver is not implemented.\n"
+            f"Active display: {self.screen.renderer_description}")
         note.setWordWrap(True);form.addRow(note)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
@@ -1013,7 +1080,11 @@ class Window(QMainWindow):
             self.settings.update(memory_mib=ram.currentData(),fps=rate.currentData(),cpu_count=cores.currentData())
             if self.worker:
                 self.worker.submit('refresh', rate.currentData())
+            self.settings['renderer'] = renderer.currentData()
+            self.screen.configure_renderer(self.settings['renderer'])
             self.save_settings()
+            if self.screen.renderer_warning:
+                self.show_status_message(self.screen.renderer_warning, 8000)
 
     def system_info(self):
         dialog = QDialog(self)
@@ -1028,7 +1099,7 @@ class Window(QMainWindow):
             session = self.worker.session if self.worker else None
             value = system_information(ROOT, self.settings, host_limits(), session,
                 self.screen.visual_rate.fps() if not self.paused and self.worker else 0.,
-                getattr(self, 'capture_fps', 0.))
+                getattr(self, 'capture_fps', 0.), self.screen.renderer_description)
             scroll = text.verticalScrollBar().value()
             text.setPlainText(value)
             text.verticalScrollBar().setValue(scroll)
