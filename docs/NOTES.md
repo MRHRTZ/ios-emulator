@@ -1,3 +1,12 @@
+## STOP / separate GPU translator scaffold — 2026-10-21
+
+- User explicitly requested preparing a sibling translator workspace and ending work in this emulator chat, without running translator RE/implementation here. Created D:/Data/Apple/IOS/ios-gpu-translator with local ignored AGENTS.md, README.md, .gitignore, docs/TODO.md and docs/HANDOFF.md. Documentation only: no REA installation, no binary RE session, no translator code, no GitHub repository created.
+- REA reviewed from official repo/docs. It can orchestrate native providers; Windows Ghidra P0 currently admits PE/raw6502, not Mach-O. It is optional. Future task must validate a supported Mach-O route, inventory actual iOS graphics ABI, and choose an architecture before implementation. The current project's missing iOS GPU translator is not proof no related work exists elsewhere.
+- Source0ef09ba pushed; Windows CI39541003669 SUCCESS61 tests. Native RTX5070 OpenGL presentation and exact red/blue readback/renderer roundtrip passed. This is host display only; no iOS Metal/VirtIO GPU acceleration. Auto/Software/OpenGL choices work; Vulkan presenter remains unavailable.
+- Diagnostic0095 CI39539338092 SUCCESS, sourcef4ef1aa, artifact hashc6d0011cb898ff82b29ee89e47cbdf738595450977195468cdd81eaf23ceba8d verified. Explicit --kernel boot, default0094 left unchanged. Run20261021-105027-498100,4CPU/4096MiB/target15 reached Home without agent Home/Power; latest Home screenshot updated. Boot/idle vsync~53–54.5Hz, callback~0.01ms. Controlled0095 motion/pipeline profiling remains unperformed at user's stop. Wallpaper black, Safari deferred.
+- GUI exec63039/window3608854, QEMU29800 was still running at last check. Native shutdown attempts were not confirmed: live shutdown_requested=false and user desktop interaction occurred. No Force Stop or process kill used; do not claim shutdown. Refresh active.json and native inventory before later input. Runtime fast-drag/wheel, target15/60 comparison and guest GPU support remain unfinished.
+
+---
 - Native OpenGL presenter integration PASS on RTX5070: red/blue test pattern GPU framebuffer readback byte-color exact, Software→OpenGL roundtrip valid.61 host tests PASS. New95 run20261021-105027-498100 QEMU29800, GUI63039/window3608854, target15/4CPU/4096, OpenGLAuto. Pipeline block valid during boot: vsync~53–54.5Hz, idlecallback~0.01ms. No manualHome/Power yet. Final runtime scroll/profile/screenshots pending.
 ## Hardware display selection and kernel0095 — 2026-10-21
 

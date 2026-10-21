@@ -35,8 +35,9 @@ compatibility score or release-readiness measure. Deferred work remains counted.
   still slow. See [performance measurements](PERFORMANCE.md).
 - Four-core0094 fresh boot20261021-102412-800300 reached Home without manual
   Home/Power. The default-wallpaper trial still resulted in black wallpaper.
-- Pinned Python dependencies;60 local host tests pass. Windows CI39539865660
-  passed60 tests at c733779, including fast-drag/wheel and pipeline-rate regressions.
+- Pinned Python dependencies;61 local host tests pass. Windows CI39541003669
+  passed61 tests at0ef09ba. Native OpenGL presentation on RTX5070 passed pixel
+  readback and Software/OpenGL roundtrip tests; iOS graphics remain software.
 - [Actual Windows/Home screenshot and its limitations](SCREENSHOTS.md).
 
 ## In progress
@@ -47,8 +48,9 @@ compatibility score or release-readiness measure. Deferred work remains counted.
 - Low iOS motion rate: target60 scroll showed trailing visual up to2fps and
   panel presentations2.5/s. Target15 comparison was invalid (fast drag became
   tap); endpoint correction has a regression test and awaits runtime testing.
-- Kernel0095 adds optional swap/vsync/work counters; local compile passed,
-  CI39539338092 is building. More profiling is needed before blaming one iOS service.
+- Kernel0095 adds optional swap/vsync/work counters; local compile and
+  CI39539338092 passed. Four-core Home boot and idle counters verified;
+  controlled motion profiling remains pending. Translator work is planned separately.
 
 ## Still missing or deferred
 

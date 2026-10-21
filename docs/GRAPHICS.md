@@ -3,6 +3,12 @@
 User-requested settings: Auto, Software, Vulkan, OpenGL. Work belongs on
 `dev/window-native`; packaging remains a later milestone.
 
+## Host presentation and separate translator work
+
+Auto/Software/OpenGL host display selection is implemented. Native Qt OpenGL reports NVIDIA RTX5070 and passes deterministic framebuffer color readback plus a Software/OpenGL roundtrip. Vulkan presentation is disabled with a reason. These choices present the existing software iOS framebuffer; they do not implement an iOS GPU driver.
+
+No-disk ARM64 QEMU probes initialized VirtIO2D, VirGL and Venus with EGL-headless. This build has no virtio-vga. Driver/translation research has a separate local planning workspace; no translator has been implemented. REA is an optional analysis helper, with host/format support to verify. Safari testing stays deferred.
+
 ## Current verified path
 
 The iOS CoreAnimation software compositor writes IOSurfaces. SweetFramebuffer
