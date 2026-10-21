@@ -411,6 +411,7 @@ class Window(QMainWindow):
     def __init__(self, auto_start=True, kernel=None, overlay=None):
         super().__init__()
         self.setWindowTitle('iOS Emulator')
+        self.setWindowIcon(QIcon(str(ROOT / 'assets/app-icon.ico')))
         self.setObjectName('iosEmulatorWindow')
         self.setMinimumSize(540, 600)
         self.resize(650, min(980, QApplication.primaryScreen().availableGeometry().height() - 60))
@@ -995,7 +996,10 @@ class Window(QMainWindow):
 
 
 def main(auto_start=True, kernel=None, overlay=None):
+    if sys.platform == 'win32':
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('MRHRTZ.iOSEmulator')
     app = QApplication([sys.argv[0]])
+    app.setWindowIcon(QIcon(str(ROOT / 'assets/app-icon.ico')))
     app.setApplicationName('iOS Emulator')
     app.setOrganizationName('MRHRTZ')
     for style in ('windowsvista', 'Windows'):

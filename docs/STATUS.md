@@ -3,7 +3,7 @@
 Snapshot: 2026-10-21, dev/window-native.
 
 **Checklist completion: 52/70 (74.3%).** Counted from the top-level checkboxes
-in [TODO.md](../TODO.md). Items have equal weight; this is bookkeeping, not a
+in [TODO.md](TODO.md). Items have equal weight; this is bookkeeping, not a
 compatibility score or release-readiness measure. Deferred work remains counted.
 
 ## Verified
@@ -51,5 +51,5 @@ compatibility remain incomplete. More than four QEMU CPUs are not exposed by
 this GUI. Native APFS preparation and application packaging remain deferred.
 
 See [architecture](ARCHITECTURE.md), [graphics plan](GRAPHICS.md),
-[Safari investigation](SAFARI_RENDERING.md) and [engineering handoff](../NOTES.md)
+[Safari investigation](SAFARI_RENDERING.md) and [engineering handoff](NOTES.md)
 for evidence and open work.

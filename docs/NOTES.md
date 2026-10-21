@@ -1,3 +1,11 @@
+## Active checkpoint — icon and documentation — 2026-10-21
+
+- New user request resumes work; old 2% STOP below is historical (allowance reset, 2% used at start).
+- Generated orbit/device artwork, saved assets/app-icon.png plus seven-size ICO; QApplication and Window load it, Windows AppUserModelID set. Host suite: 50 PASS. Native GUI titlebar icon observed; user then requested transparent phone/ring only. Updated PNG/ICO alpha verified (transparent corner), no tile/border. Relaunch needed for revised artwork.
+- Moved TODO/NOTES and kernel README into docs; root README retained. Root AGENTS.md retained locally and untracked/ignored. Main documentation receives actual Home/settings screenshots with branch/boot caveats and project icon; no implementation promoted.
+- Old GUI no longer has a native window. Do not infer auto-unlock or wallpaper success from stale active.json. Safari remains deferred.
+
+---
 ## STOP CHECKPOINT - 2% five-hour allowance remaining - 2026-10-21 05:35 WIB
 
 - User requested stop/checkpoint at1-3% remaining. Latest account snapshot98% used/2% remaining, weekly47% used. STOP new work after committing/pushing this handoff.

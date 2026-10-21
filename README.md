@@ -1,5 +1,7 @@
 # ios-emulator
 
+<img src="assets/app-icon.png" width="96" alt="Virtual device orbit application icon">
+
 An **experimental, educational and research project** exploring real iOS
 userspace on a patched open-source XNU kernel under QEMU. Native Windows x64
 is the current development target. This is an incomplete emulator with known
@@ -56,10 +58,10 @@ Root preparation and kernel requirements are explained in the setup guides.
 - [Desktop UI, controls and settings](docs/GUI.md)
 - [How the port works and integrated systems](docs/ARCHITECTURE.md)
 - [Verified status, known issues and checklist percentage](docs/STATUS.md)
-- [Full TODO list](TODO.md)
+- [Full TODO list](docs/TODO.md)
 - [GPU / Vulkan / OpenGL integration plan](docs/GRAPHICS.md)
 - [Screenshots and evidence requirements](docs/SCREENSHOTS.md)
-- [Engineering checkpoint and history](NOTES.md)
+- [Engineering checkpoint and history](docs/NOTES.md)
 - [Original phone-port reference](docs/PHONE_PORT_REFERENCE.md)
 
 Development: **dev/window-native**. Windows releases: **window-native**.

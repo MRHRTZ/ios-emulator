@@ -25,11 +25,11 @@ runner without Apple firmware. This tests Python setup and host behavior; it doe
 not establish successful guest boot or replace QEMU/runtime testing.
 
 The sections below preserve the earlier kernel bring-up baseline. Use
-[STATUS.md](STATUS.md) and [TODO.md](../TODO.md) for current guest evidence.
+[STATUS.md](STATUS.md) and [TODO.md](TODO.md) for current guest evidence.
 
 ---
 
-For the current Python CLI and the newer PID 1/firmware milestones, see [CLI.md](CLI.md) and [../TODO.md](../TODO.md). The commands and first-boot observations below are the earlier bring-up baseline.
+For the current Python CLI and the newer PID 1/firmware milestones, see [CLI.md](CLI.md) and [../TODO.md](TODO.md). The commands and first-boot observations below are the earlier bring-up baseline.
 
 # Windows native setup
 
