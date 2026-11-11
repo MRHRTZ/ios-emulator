@@ -1,0 +1,149 @@
+﻿name: XNU build environment preflight
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: xnu-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    name: Inspect macOS 15 build environment
+    runs-on: macos-15
+    timeout-minutes: 10
+
+    steps:
+      - name: Report macOS, Xcode, IIG, KDK, and build tools
+        shell: bash
+        run: |
+          set +e
+          exec > >(tee -a "$GITHUB_STEP_SUMMARY") 2>&1
+
+          echo "# XNU build environment preflight"
+          echo
+          echo "- Runner: \`macos-15\`"
+          echo "- No packages will be installed and no XNU build will be run."
+          echo
+
+          echo "## macOS"
+          sw_vers
+          echo
+
+          echo "## Installed Xcode applications"
+          shopt -s nullglob
+          xcode_apps=(/Applications/Xcode*.app)
+          if ((${#xcode_apps[@]})); then
+            for app in "${xcode_apps[@]}"; do
+              echo "### $app"
+              if [[ -x "$app/Contents/Developer/usr/bin/xcodebuild" ]]; then
+                "$app/Contents/Developer/usr/bin/xcodebuild" -version
+              else
+                echo "No xcodebuild found in this application bundle."
+              fi
+            done
+          else
+            echo "No /Applications/Xcode*.app bundles found."
+          fi
+          echo
+
+          echo "## Selected Xcode"
+          developer_dir="$(xcode-select -p 2>&1)"
+          xcode_select_status=$?
+          echo "xcode-select exit status: $xcode_select_status"
+          echo "Developer directory: $developer_dir"
+
+          if [[ $xcode_select_status -eq 0 && -n "$developer_dir" ]]; then
+            selected_xcode="${developer_dir%/Contents/Developer}"
+            echo "Selected Xcode bundle: $selected_xcode"
+            if command -v xcodebuild >/dev/null 2>&1; then
+              xcodebuild -version
+            else
+              echo "xcodebuild is not on PATH."
+            fi
+          else
+            selected_xcode=""
+            echo "Could not determine the selected Developer directory."
+          fi
+          echo
+
+          echo "## IIG compiler"
+          iig_path="$(xcrun --find iig 2>&1)"
+          iig_find_status=$?
+          echo "xcrun --find iig exit status: $iig_find_status"
+          echo "IIG path: $iig_path"
+
+          if [[ $iig_find_status -eq 0 && -f "$iig_path" ]]; then
+            echo "IIG version probe (-version):"
+            iig_version="$("$iig_path" -version 2>&1)"
+            iig_version_status=$?
+            echo "Exit status: $iig_version_status"
+            if [[ -n "$iig_version" ]]; then
+              printf '%s\n' "$iig_version"
+            else
+              echo "No version text returned."
+            fi
+
+            if [[ -z "$iig_version" || $iig_version_status -ne 0 ]]; then
+              echo "IIG version probe (--version):"
+              iig_version="$("$iig_path" --version 2>&1)"
+              iig_version_status=$?
+              echo "Exit status: $iig_version_status"
+              if [[ -n "$iig_version" ]]; then
+                printf '%s\n' "$iig_version"
+              else
+                echo "No version text returned."
+              fi
+            fi
+
+            echo "IIG SHA256:"
+            shasum -a 256 "$iig_path"
+          else
+            echo "IIG was not found as an installed file; version and SHA256 unavailable."
+          fi
+          echo
+
+          echo "## KDK 13.5 build 22G74"
+          expected_kdk="/Library/Developer/KDKs/KDK_13.5_22G74.kdk"
+          if [[ -d "$expected_kdk" ]]; then
+            echo "FOUND: $expected_kdk"
+          else
+            echo "NOT FOUND at expected path: $expected_kdk"
+          fi
+
+          kdk_matches=(/Library/Developer/KDKs/*13.5*22G74*)
+          if ((${#kdk_matches[@]})); then
+            echo "Matching KDK paths:"
+            printf '%s\n' "${kdk_matches[@]}"
+          else
+            echo "No KDK directory matching 13.5 and 22G74 was found."
+          fi
+          echo
+
+          echo "## Required build tools"
+          check_tool() {
+            local tool="$1"
+            local version_args=("${@:2}")
+            local tool_path
+            local tool_status
+
+            tool_path="$(command -v "$tool" 2>/dev/null)"
+            tool_status=$?
+            if [[ $tool_status -ne 0 || -z "$tool_path" ]]; then
+              echo "MISSING: $tool"
+              return
+            fi
+
+            echo "FOUND: $tool ($tool_path)"
+            "$tool" "${version_args[@]}" 2>&1
+            echo "Version command exit status: $?"
+          }
+
+          check_tool git --version
+          check_tool jq --version
+          check_tool cmake --version
+          check_tool ninja --version
+          check_tool bash --version
+          check_tool python3 --version
+          echo
+          echo "## End of report"
